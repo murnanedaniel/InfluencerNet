@@ -1,0 +1,22 @@
+name: exatrkx-lrp
+
+channels:
+    - rapidsai
+    - nvidia
+    - pytorch
+    - pyg
+    - conda-forge
+
+dependencies:
+    - pip
+    - numpy
+    - pandas
+    - scipy
+    - matplotlib
+    - cupy
+    - cudatoolkit=11.3
+    - pytorch=1.11.0
+    - pytorch-lightning
+    - pyg
+    - rapids=22.08
+    

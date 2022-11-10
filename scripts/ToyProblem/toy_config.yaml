@@ -1,0 +1,35 @@
+artifacts: /global/cfs/cdirs/m3443/data/lightning_models/lightning_checkpoints
+project: LRP_Study_B
+model: AGNN
+gpus: 1
+nodes: 1
+
+# Dataset parameters
+datatype_split: [2000, 30, 10] # Number of [training, validation, testing] examples
+batch_size: 20
+num_tracks: 10
+num_layer: 10
+detector_width: 0.5
+cut_policy: 0
+ptcut: 0.0
+
+# Model parameters
+edge_cut: 0.5
+spatial_channels: 2
+cell_channels: 0
+hidden: 16
+n_graph_iters: 6
+nb_node_layer: 3
+nb_edge_layer: 3
+emb_channels: 0
+layernorm: True
+batchnorm: False
+aggregation: mean_sum
+hidden_activation: SiLU
+weight: 0.5
+warmup: 10
+lr: 0.001
+factor: 0.8
+patience: 30
+truth_key: y
+max_epochs: 200

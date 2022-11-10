@@ -52,7 +52,7 @@ class EmbeddingBase(LightningModule):
 
         try:
             self.logger.experiment.define_metric("val_loss", summary="min")
-            self.log_embedding_plot(self.valset[0], self.valset[0].all_signal_edges, self.valset[0].x)
+            self.log_embedding_plot(self.valset[0], spatial1=self.valset[0].x, uu_edges=self.valset[0].all_signal_edges)
         except Exception:
             warnings.warn("Could not define metrics for W&B")
 
@@ -129,115 +129,9 @@ class EmbeddingBase(LightningModule):
         logging.info(f"Purity: {pur}")
 
         if batch_idx == 0:
-            self.log_embedding_plot(batch, validation_edges, spatial)
+            self.log_embedding_plot(batch, spatial, uu_edges=validation_edges)
 
         return loss
-
-    def log_embedding_plot(self, batch, validation_edges, spatial1, spatial2=None, label="embeddings"):
-
-        if self.logger.experiment is not None:
-            self.logger.experiment.log(
-                {
-                label: self.plot_embedding_native(batch, validation_edges, spatial1, spatial2)
-                }
-            )
-
-
-    def plot_embedding_native(self, batch, validation_edges, spatial1, spatial2=None):
-
-        fig = go.Figure()
-
-        true_edges = batch.pid[validation_edges[0]] == batch.pid[validation_edges[1]]
-        if spatial2 is None:
-            spatial1_cpu, spatial2_cpu = spatial1.cpu(), spatial1.cpu()
-        else:
-            spatial1_cpu, spatial2_cpu = spatial1.cpu(), spatial2.cpu()
-        validation_edges_cpu, true_edges_cpu = validation_edges.cpu(), true_edges.cpu()
-
-        # Plot edges
-        for edge in validation_edges_cpu[:, true_edges_cpu].T:
-            fig.add_trace(
-                go.Scatter(
-                    x=[spatial1_cpu[edge[0], 0], spatial2_cpu[edge[1], 0]],
-                    y=[spatial1_cpu[edge[0], 1], spatial2_cpu[edge[1], 1]],
-                    mode="lines",
-                    line=dict(color="blue", width=2)
-                )
-            )
-
-        for edge in validation_edges_cpu[:, ~true_edges_cpu].T:
-            fig.add_trace(
-                go.Scatter(
-                    x=[spatial1_cpu[edge[0], 0], spatial2_cpu[edge[1], 0]],
-                    y=[spatial1_cpu[edge[0], 1], spatial2_cpu[edge[1], 1]],
-                    mode="lines",
-                    line=dict(color="red", width=2)
-                )
-            )
-
-        # Plot spatial1 points as circles, with each point colored, with a map of PID to color
-        fig.add_trace(
-            go.Scatter(
-                x=spatial1_cpu[:, 0],
-                y=spatial1_cpu[:, 1],
-                mode="markers",
-                marker=dict(
-                    size=10,
-                    color=batch.pid.cpu(),
-                )
-            )
-        )
-
-
-        if spatial2 is not None:
-            # Plot spatial2 points as stars, with each point colored, with a map of PID to color
-            rep_with_neighbors = validation_edges[1].unique().cpu()
-
-            fig.add_trace(
-                go.Scatter(
-                    x=spatial2_cpu[:, 0],
-                    y=spatial2_cpu[:, 1],
-                    mode="markers",
-                    marker=dict(
-                        size=8,
-                        color=batch.pid.cpu(),
-                        symbol="star"
-                        )
-                    )
-                )
-            fig.add_trace(
-                go.Scatter(
-                    x=spatial2_cpu[rep_with_neighbors, 0],
-                    y=spatial2_cpu[rep_with_neighbors, 1],
-                    mode="markers",
-                    marker=dict(
-                        size=14,
-                        color=batch.pid[rep_with_neighbors].cpu(),
-                        symbol="star"
-                        )
-                    )
-                )
-
-        # Plot large circles around the spatial points, with thick black border, and semi-transparent fill
-        # for point in spatial_cpu:
-        #     fig.add_shape(
-        #         type="circle",
-        #         xref="x",
-        #         yref="y",
-        #         x0=point[0] - self.hparams["radius"]**2,
-        #         y0=point[1] - self.hparams["radius"]**2,
-        #         x1=point[0] + self.hparams["radius"]**2,
-        #         y1=point[1] + self.hparams["radius"]**2,
-        #         line=dict(
-        #             color="black",
-        #             width=10
-        #         ),
-        #         fillcolor="black",
-        #         opacity=0.2
-        #     )   
-
-        return fig
-
 
     def get_input_data(self, batch):
 
@@ -424,7 +318,7 @@ class EmbeddingBase(LightningModule):
         """
         Use this to manually enforce warm-up. In the future, this may become built-into PyLightning
         """
-        logging.info("Optimizer step for batch {}".format(batch_idx))
+        logging.info(f"Optimizer step for batch {batch_idx}")
         # warm up lr
         if (self.hparams["warmup"] is not None) and (
             self.trainer.current_epoch < self.hparams["warmup"]
@@ -439,7 +333,7 @@ class EmbeddingBase(LightningModule):
         optimizer.step(closure=optimizer_closure)
         optimizer.zero_grad()
 
-        logging.info("Optimizer step done for batch {}".format(batch_idx))
+        logging.info(f"Optimizer step done for batch {batch_idx}")
 
     def plot_embedding_image(self, batch, validation_edges, spatial):
 
@@ -451,3 +345,101 @@ class EmbeddingBase(LightningModule):
         plt.close(fig)
 
         return wandb.Image(data)
+
+    def log_embedding_plot(self, batch, spatial1, uu_edges=None, ui_edges=None, ii_edges=None, spatial2=None, label="embeddings"):
+
+        if self.logger.experiment is not None:
+            self.logger.experiment.log(
+                {
+                label: self.plot_embedding_native(batch, spatial1, spatial2, uu_edges, ui_edges, ii_edges)
+                }
+            )
+
+    def plot_embedding_native(self, batch, spatial1, spatial2=None, uu_edges=None, ui_edges=None, ii_edges=None):
+
+        fig = go.Figure()
+
+        if spatial2 is None:
+            spatial1_cpu, spatial2_cpu = spatial1.cpu(), spatial1.cpu()
+        else:
+            spatial1_cpu, spatial2_cpu = spatial1.cpu(), spatial2.cpu()
+        
+
+        if uu_edges is not None and uu_edges.shape[1] > 0:
+            self.plot_edges(fig, uu_edges, spatial1_cpu, spatial1_cpu, batch.pid, color1="green", color2="orange")
+
+        if ii_edges is not None and ii_edges.shape[1] > 0:
+            self.plot_edges(fig, ii_edges, spatial2_cpu, spatial2_cpu, batch.pid, color1="purple", color2="grey")
+
+        if ui_edges is not None and ui_edges.shape[1] > 0:
+            self.plot_edges(fig, ui_edges, spatial1_cpu, spatial2_cpu, batch.pid, color1="blue", color2="red")
+
+        # Plot spatial1 points as circles, with each point colored, with a map of PID to color
+        fig.add_trace(
+            go.Scatter(
+                x=spatial1_cpu[:, 0],
+                y=spatial1_cpu[:, 1],
+                mode="markers",
+                marker=dict(
+                    size=10,
+                    color=batch.pid.cpu(),
+                )
+            )
+        )
+
+        if spatial2 is not None:
+            # Plot spatial2 points as stars, with each point colored, with a map of PID to color
+            fig.add_trace(
+                go.Scatter(
+                    x=spatial2_cpu[:, 0],
+                    y=spatial2_cpu[:, 1],
+                    mode="markers",
+                    marker=dict(
+                        size=8,
+                        color=batch.pid.cpu(),
+                        symbol="star"
+                        )
+                    )
+                )
+            if ui_edges is not None and ui_edges.shape[1] > 0:
+                for pid in batch.pid.unique():
+                    rep_with_pid = ui_edges[1, batch.pid[ui_edges[1]] == pid].unique().cpu()
+
+                    fig.add_trace(
+                        go.Scatter(
+                            x=spatial2_cpu[rep_with_pid, 0],
+                            y=spatial2_cpu[rep_with_pid, 1],
+                            mode="markers",
+                            marker=dict(
+                                size=14,
+                                color=batch.pid[rep_with_pid].cpu(),
+                                symbol="star"
+                                )
+                            )
+                        )
+
+        return fig
+
+    def plot_edges(self, fig, edges, spatial1, spatial2, pid, color1="blue", color2="red"):
+            
+            true_edges = pid[edges[0]] == pid[edges[1]]
+            for edge in edges[:, true_edges].cpu().T:
+                fig.add_trace(
+                    go.Scatter(
+                        x=[spatial1[edge[0], 0], spatial2[edge[1], 0]],
+                        y=[spatial1[edge[0], 1], spatial2[edge[1], 1]],
+                        mode="lines",
+                        line=dict(color=color1, width=1),
+                        showlegend=False,
+                    )
+                )
+            for edge in edges[:, ~true_edges].cpu().T:
+                fig.add_trace(
+                    go.Scatter(
+                        x=[spatial1[edge[0], 0], spatial2[edge[1], 0]],
+                        y=[spatial1[edge[0], 1], spatial2[edge[1], 1]],
+                        mode="lines",
+                        line=dict(color=color2, width=1),
+                        showlegend=False,
+                    )
+                )

@@ -129,7 +129,6 @@ def define_truth_graph(node_feature, ptcut):
     
     # Calculate all-same-PID truth graph
     all_edge_combinations = torch.cartesian_prod(torch.arange(len(node_feature)), torch.arange(len(node_feature))).T
-    all_edge_combinations = all_edge_combinations[:, all_edge_combinations[0] != all_edge_combinations[1]]
     all_truth_graph = all_edge_combinations[:, node_feature[all_edge_combinations[0], 2] == node_feature[all_edge_combinations[1], 2]]
     # Calculate signal truth graph
     sig_truth_graph = all_truth_graph[:, (node_feature[:, 3][all_truth_graph] > ptcut).all(0)]

@@ -270,6 +270,7 @@ class EmbeddingBase(LightningModule):
             query_indices,
             r_max=radius,
             k_max=knn,
+            self_loop=True
         )
 
         edges = torch.cat([edges, knn_edges], dim=-1)
@@ -374,6 +375,14 @@ class EmbeddingBase(LightningModule):
         if ui_edges is not None and ui_edges.shape[1] > 0:
             self.plot_edges(fig, ui_edges, spatial1_cpu, spatial2_cpu, batch.pid, color1="blue", color2="red")
 
+        # Create a map of PID to color
+        all_pids = batch.pid.unique()
+        color_list = list(range(len(all_pids)))
+        pid_to_color = dict(zip(all_pids.cpu().numpy(), color_list))
+        # print(pid_to_color)
+        # print(pid_to_color[batch.pid.cpu().numpy()[0]])
+
+
         # Plot spatial1 points as circles, with each point colored, with a map of PID to color
         fig.add_trace(
             go.Scatter(
@@ -381,9 +390,13 @@ class EmbeddingBase(LightningModule):
                 y=spatial1_cpu[:, 1],
                 mode="markers",
                 marker=dict(
+                    cmax=len(all_pids),
+                    cmin=0,
                     size=10,
-                    color=batch.pid.cpu(),
+                    color=[pid_to_color[pid] for pid in batch.pid.cpu().numpy()],
+                    colorscale="Rainbow"
                 )
+
             )
         )
 
@@ -396,8 +409,11 @@ class EmbeddingBase(LightningModule):
                     mode="markers",
                     marker=dict(
                         size=8,
-                        color=batch.pid.cpu(),
-                        symbol="star"
+                        cmax=len(all_pids),
+                        cmin=0,
+                        color=[pid_to_color[pid] for pid in batch.pid.cpu().numpy()],
+                        symbol="star",
+                        colorscale="Rainbow"
                         )
                     )
                 )
@@ -412,8 +428,11 @@ class EmbeddingBase(LightningModule):
                             mode="markers",
                             marker=dict(
                                 size=14,
-                                color=batch.pid[rep_with_pid].cpu(),
-                                symbol="star"
+                                cmax=len(all_pids),
+                                cmin=0,
+                                color=[pid_to_color[pid] for pid in batch.pid[rep_with_pid].cpu().numpy()],
+                                symbol="star",
+                                colorscale="Rainbow"
                                 )
                             )
                         )

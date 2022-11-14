@@ -1,6 +1,7 @@
 # 3rd party imports
 from ..influencer_base import InfluencerBase
 import torch.nn.functional as F
+import copy
 
 # Local imports
 from ..utils import make_mlp
@@ -18,6 +19,9 @@ class InfluencerEmbedding(InfluencerBase):
             output_activation=None,
             layer_norm=True,
         )
+
+        # Make influencer network, a deep copy of the user network
+        # self.influencer_network = copy.deepcopy(self.user_network)        
 
         self.influencer_network = make_mlp(
             hparams["spatial_channels"],

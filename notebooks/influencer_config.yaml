@@ -29,12 +29,12 @@ points_per_batch: 100000
 user_user_weight: 1
 user_influencer_weight: 1
 influencer_influencer_weight: 1
-influencer_spread: [10, 5, 0.5]
+influencer_spread: 1
 influencer_exponent: 1
-user_user_loss_ratio: True
-warmup: 10
+user_user_loss_ratio: False
+warmup: 20
 lr: 0.0001
 factor: 0.8
-patience: 10
+patience: 20
 regime: [rp, hnm, norm]
 max_epochs: 100

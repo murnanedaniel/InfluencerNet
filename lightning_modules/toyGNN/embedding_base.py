@@ -91,8 +91,16 @@ class EmbeddingBase(LightningModule):
                     step_size=self.hparams["patience"],
                     gamma=self.hparams["factor"],
                 ),
+                # "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(
+                #     optimizer[0],
+                #     mode="min",
+                #     factor=self.hparams["factor"],
+                #     patience=self.hparams["patience"],
+                #     verbose=True,
+                # ),
                 "interval": "epoch",
                 "frequency": 1,
+                # "monitor": "val_loss",
             }
         ]
         return optimizer, scheduler

@@ -88,33 +88,54 @@ class InfluencerBase(EmbeddingBase):
         return negative_loss + self.hparams["user_user_weight"] * positive_loss
 
     def get_user_influencer_loss(self, user_influencer_edges, user_influencer_truth, user_embed, influencer_embed, batch):
-
-        hinge, d = self.get_hinge_distance(user_embed, influencer_embed, user_influencer_edges, user_influencer_truth)
+        
         positive_loss = []
 
         for pid, particle_length in torch.stack(batch.pid.unique(return_counts=True)).T:
-            true_edges = (batch.pid[user_influencer_edges] == pid).all(dim=0)
-            num_true_edges = true_edges.sum()
-            if num_true_edges > 0:
-                grav_weights = 1 - torch.exp( -d[true_edges] / self.hparams["margin"]**2 / self.influencer_spread)
-                prod_grav_weights = grav_weights.prod()
-                # grav_weights = self.influencer_spread * self.hparams["margin"]**2 / (-d[true_edges])
-                # prod_grav_weights = torch.exp(grav_weights.sum())
-                if self.hparams["influencer_exponent"] is not None:
-                    power_grav_weights = (prod_grav_weights+1e-20).pow(1/self.hparams["influencer_exponent"])    
-                else:
-                    power_grav_weights = (prod_grav_weights+1e-20).pow(1/particle_length)
-                positive_loss.append(power_grav_weights)
-                # Check if nan
-                if torch.isnan(power_grav_weights):
-                    print(f"Class {pid} num edges: {num_true_edges}")
-                    print(f"Class {pid} particles length: {particle_length}")
-                    print(f"Class {pid} grav weights: {grav_weights} \n")
-                    print(f"Class {pid} prod grav weights: {prod_grav_weights}")
-                    print(f"Class {pid} loss: {power_grav_weights} \n")
-                    sys.exit()
+            true_hits = torch.where(batch.pid == pid)[0]
+            true_mesh = torch.meshgrid(true_hits, true_hits)
+
+            # dist = 1/torch.sum((user_embed[true_mesh[0]] - influencer_embed[true_mesh[1]])**2, dim=-1)
+            # print(dist)
+            # follower_sum = -dist.sum(dim=0) * (self.hparams["margin"]**2 * self.influencer_spread**2)
+            # print(follower_sum)
+            # influencer_sum = torch.exp(follower_sum).mean(dim=0)
+            # follower_sum = - ( (dist.prod(dim=0)+1e-10).pow(1/particle_length) * (self.hparams["margin"]**2 * self.influencer_spread) ).sum()
+            # print(follower_sum)
+            # influencer_sum = torch.exp(follower_sum)
+            dist = torch.sum((user_embed[true_mesh[0]] - influencer_embed[true_mesh[1]])**2, dim=-1)
+            follower_sum = dist.mean(dim=0) / (self.hparams["margin"]**2 * self.influencer_spread**2)
+            influencer_sum = follower_sum.prod(dim=0).pow(1/particle_length)
+            # influencer_sum = follower_sum.prod(dim=0)
+            # print(influencer_sum)
+            positive_loss.append(influencer_sum)
+
+
+        # for pid, particle_length in torch.stack(batch.pid.unique(return_counts=True)).T:
+        #     true_edges = (batch.pid[user_influencer_edges] == pid).all(dim=0)
+        #     num_true_edges = true_edges.sum()
+        #     if num_true_edges > 0:
+        #         grav_weights = 1 - torch.exp( -d[true_edges] / self.hparams["margin"]**2 / self.influencer_spread)
+        #         prod_grav_weights = grav_weights.prod()
+        #         # grav_weights = self.influencer_spread * self.hparams["margin"]**2 / (-d[true_edges])
+        #         # prod_grav_weights = torch.exp(grav_weights.sum())
+        #         if self.hparams["influencer_exponent"] is not None:
+        #             power_grav_weights = (prod_grav_weights+1e-20).pow(1/self.hparams["influencer_exponent"])    
+        #         else:
+        #             power_grav_weights = (prod_grav_weights+1e-20).pow(1/particle_length)
+        #         positive_loss.append(power_grav_weights)
+        #         # Check if nan
+        #         if torch.isnan(power_grav_weights):
+        #             print(f"Class {pid} num edges: {num_true_edges}")
+        #             print(f"Class {pid} particles length: {particle_length}")
+        #             print(f"Class {pid} grav weights: {grav_weights} \n")
+        #             print(f"Class {pid} prod grav weights: {prod_grav_weights}")
+        #             print(f"Class {pid} loss: {power_grav_weights} \n")
+        #             sys.exit()
 
         positive_loss = torch.stack(positive_loss).mean()
+
+        hinge, d = self.get_hinge_distance(user_embed, influencer_embed, user_influencer_edges, user_influencer_truth)
         negative_loss = torch.stack([self.hparams["margin"]**2 - d[hinge==-1], torch.zeros_like(d[hinge==-1])], dim=1).max(dim=1)[0].mean()
         
         loss = 0
@@ -128,7 +149,7 @@ class InfluencerBase(EmbeddingBase):
 
         _, d = self.get_hinge_distance(influencer_embed, influencer_embed, influencer_influencer_edges, influencer_influencer_truth)
 
-        return self.hparams["influencer_influencer_weight"] * torch.stack([(2*self.hparams["margin"])**2 - d, torch.zeros_like(d)], dim=1).max(dim=1)[0].mean()
+        return self.hparams["influencer_influencer_weight"] * torch.stack([(2*self.hparams["margin"])**2 - d, torch.zeros_like(d)], dim=1).max(dim=1)[0].sum()
         
     def training_step(self, batch, batch_idx):
 
@@ -161,12 +182,15 @@ class InfluencerBase(EmbeddingBase):
         influencer_influencer_loss = self.get_influencer_influencer_loss(influencer_influencer_edges, influencer_influencer_truth, influencer_embed)
 
         # Compute the total loss
-        if self.user_influencer_loss_ratio is not None:
-            loss = self.user_influencer_loss_ratio[0]*user_user_loss + self.user_influencer_loss_ratio[1]*user_influencer_loss + influencer_influencer_loss
-        elif self.user_user_loss_ratio is not None:
-            loss = self.user_user_loss_ratio*user_user_loss + user_influencer_loss + self.user_user_loss_ratio*influencer_influencer_loss
-        else:
-            loss = user_user_loss + user_influencer_loss + influencer_influencer_loss
+        # if self.user_influencer_loss_ratio is not None:
+        #     loss = self.user_influencer_loss_ratio[0]*user_user_loss + self.user_influencer_loss_ratio[1]*user_influencer_loss + influencer_influencer_loss
+        # elif self.user_user_loss_ratio is not None:
+        #     loss = self.user_user_loss_ratio*user_user_loss + user_influencer_loss + self.user_user_loss_ratio*influencer_influencer_loss
+        # else:
+        #     loss = user_user_loss + user_influencer_loss + influencer_influencer_loss
+
+        # loss = user_influencer_loss + influencer_influencer_loss
+        loss = user_user_loss + user_influencer_loss + influencer_influencer_loss
 
         self.log_dict({"train_loss": loss, "train_user_user_loss": user_user_loss, "train_user_influencer_loss": user_influencer_loss, "train_influencer_influencer_loss": influencer_influencer_loss})
 
@@ -209,6 +233,7 @@ class InfluencerBase(EmbeddingBase):
 
         # Compute the total loss
         loss = user_user_loss + user_influencer_loss + influencer_influencer_loss
+        # loss = user_influencer_loss + influencer_influencer_loss
 
         current_lr = self.optimizers().param_groups[0]["lr"]
 

@@ -35,10 +35,6 @@ class InfluencerEmbedding(InfluencerBase):
 
     def forward(self, x):
 
-        # x_out = self.network(x)
-
-        # return F.normalize(x_out) if "norm" in self.hparams["regime"] else x_out
-
         user_out = self.user_network(x)
         influencer_out = self.influencer_network(x)
 

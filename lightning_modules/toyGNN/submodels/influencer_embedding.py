@@ -1,6 +1,7 @@
 # 3rd party imports
 from ..influencer_base import InfluencerBase
 import torch.nn.functional as F
+import torch
 import copy
 
 # Local imports
@@ -31,6 +32,9 @@ class InfluencerEmbedding(InfluencerBase):
             layer_norm=True,
         )
 
+        # Add a trainable parameter that represents the radius of the hypersphere
+        self.radius = torch.nn.Parameter(torch.tensor(1.0))
+
         self.save_hyperparameters()
 
     def forward(self, x):
@@ -38,4 +42,9 @@ class InfluencerEmbedding(InfluencerBase):
         user_out = self.user_network(x)
         influencer_out = self.influencer_network(x)
 
-        return F.normalize(user_out) if "norm" in self.hparams["regime"] else user_out, F.normalize(influencer_out) if "norm" in self.hparams["regime"] else influencer_out
+        # return F.normalize(user_out) if "norm" in self.hparams["regime"] else user_out, F.normalize(influencer_out) if "norm" in self.hparams["regime"] else influencer_out
+        if "norm" in self.hparams["regime"]:
+            user_out = self.radius * F.normalize(user_out)
+            influencer_out = self.radius * F.normalize(influencer_out)
+        
+        return user_out, influencer_out

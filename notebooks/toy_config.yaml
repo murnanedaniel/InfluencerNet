@@ -33,4 +33,4 @@ factor: 0.8
 train_purity: 0
 patience: 10
 regime: [rp, hnm, norm]
-max_epochs: 10
+max_epochs: 100

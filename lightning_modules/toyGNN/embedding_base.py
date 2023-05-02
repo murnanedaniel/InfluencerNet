@@ -22,20 +22,22 @@ import torch
 from torch.nn import Linear
 from torch_geometric.data import DataLoader
 from torch_cluster import radius_graph
+from torch_geometric.nn import radius, knn
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 import io
 import wandb
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA, IncrementalPCA
 import plotly.graph_objects as go
 
+
 # Local Imports
-from .generation_utils import graph_intersection, build_dataset
+
 from .utils import build_edges
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-
+sqrt_eps = 1e-12
 
 class EmbeddingBase(LightningModule):
     def __init__(self, hparams):
@@ -45,32 +47,39 @@ class EmbeddingBase(LightningModule):
         """
         self.save_hyperparameters(hparams)
         self.trainset, self.valset, self.testset = None, None, None
+        self.dataset_class = None
+
 
     def setup(self, stage="fit"):
+        print("Setting up the data...")
         if not self.trainset or not self.valset or not self.testset:
-            self.trainset, self.valset, self.testset = build_dataset(**self.hparams)
+            for data_name, data_num in zip(["trainset", "valset", "testset"], self.hparams["data_split"]):
+                if data_num > 0:
+                    input_dir = self.hparams["input_dir"] if "input_dir" in self.hparams else None
+                    dataset = self.dataset_class(num_events=data_num, hparams=self.hparams, data_name = data_name, input_dir=input_dir)
+                    setattr(self, data_name, dataset)
 
         try:
             self.logger.experiment.define_metric("val_loss", summary="min")
-            self.log_embedding_plot(self.valset[0], spatial1=self.valset[0].x, uu_edges=self.valset[0].all_signal_edges)
+            self.log_embedding_plot(self.valset[0], spatial1=self.valset[0].x, uu_edges=self.valset[0].edge_index)
         except Exception:
             warnings.warn("Could not define metrics for W&B")
 
     def train_dataloader(self):
         if self.trainset is not None:
-            return DataLoader(self.trainset, batch_size=1, num_workers=0)
+            return DataLoader(self.trainset, batch_size=self.hparams["batch_size"], num_workers=0)
         else:
             return None
 
     def val_dataloader(self):
         if self.valset is not None:
-            return DataLoader(self.valset, batch_size=1, num_workers=0, shuffle=False)
+            return DataLoader(self.valset, batch_size=self.hparams["batch_size"], num_workers=0, shuffle=False)
         else:
             return None
 
     def test_dataloader(self):
         if self.testset is not None:
-            return DataLoader(self.testset, batch_size=1, num_workers=1)
+            return DataLoader(self.testset, batch_size=self.hparams["batch_size"], num_workers=1)
         else:
             return None
 
@@ -91,13 +100,6 @@ class EmbeddingBase(LightningModule):
                     step_size=self.hparams["patience"],
                     gamma=self.hparams["factor"],
                 ),
-                # "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(
-                #     optimizer[0],
-                #     mode="min",
-                #     factor=self.hparams["factor"],
-                #     patience=self.hparams["patience"],
-                #     verbose=True,
-                # ),
                 "interval": "epoch",
                 "frequency": 1,
                 # "monitor": "val_loss",
@@ -122,7 +124,7 @@ class EmbeddingBase(LightningModule):
 
         current_lr = self.optimizers().param_groups[0]["lr"]
 
-        cluster_true = batch.all_signal_edges.shape[1]
+        cluster_true = batch.edge_index.shape[1]
         cluster_true_positive = validation_truth.sum()
         cluster_positive = validation_edges.shape[1]
 
@@ -150,7 +152,7 @@ class EmbeddingBase(LightningModule):
 
     def append_true_pairs(self, edges, batch):
 
-        edges = torch.cat([edges.to(self.device), batch.all_signal_edges.to(self.device)], dim=-1)
+        edges = torch.cat([edges.to(self.device), batch.edge_index.to(self.device)], dim=-1)
 
         return edges
                 
@@ -158,8 +160,9 @@ class EmbeddingBase(LightningModule):
 
         hinge = truth.float().to(self.device)
         hinge[hinge == 0] = -1
-        d = torch.sum((query[edges[0]] - database[edges[1]]) ** 2, dim=-1)
-
+        # d = torch.sum((query[edges[0]] - database[edges[1]]) ** 2, dim=-1) # SQR-EUCLIDEAN
+        d = torch.sqrt(torch.sum((query[edges[0]] - database[edges[1]]) ** 2, dim=-1) + sqrt_eps) # EUCLIDEAN
+    
         return hinge, d
 
     def get_truth(self, edges, batch):
@@ -175,7 +178,7 @@ class EmbeddingBase(LightningModule):
 
     def get_query_points(self, batch, spatial):
 
-        query_indices = batch.all_signal_edges.unique()
+        query_indices = batch.edge_index.unique()
         query = spatial[query_indices]
 
         return query_indices, query
@@ -262,7 +265,9 @@ class EmbeddingBase(LightningModule):
 
         return edges, truth, spatial
 
-    def append_hnm_pairs(self, edges, query, database, query_indices=None, radius=None, knn=None):
+    def append_hnm_pairs(self, edges, query, database, query_indices=None, radius=None, knn=None, batch_index=None):
+
+        print(batch_index.max())
 
         if radius is None:
             radius = self.hparams["radius"]
@@ -272,28 +277,35 @@ class EmbeddingBase(LightningModule):
         if query_indices is None:
             query_indices = torch.arange(len(query), device=self.device)
 
+        print(batch_index.max())
+
         knn_edges = build_edges(
             query,
             database,
             query_indices,
             r_max=radius,
             k_max=knn,
-            self_loop=True
+            self_loop=True,
+            batch_index=batch_index,
         )
 
         edges = torch.cat([edges, knn_edges], dim=-1)
 
         return edges
 
-    def append_random_pairs(self, edges, database, query_indices=None):
+    def append_random_pairs(self, edges, query, database, query_indices=None, batch_index=None):
 
-        if query_indices is None:
-            query_indices = torch.arange(len(database), device=self.device)
+        if batch_index is None:
+            if query_indices is None:
+                query_indices = torch.arange(len(database), device=self.device)
 
-        n_random = int(self.hparams["randomisation"] * len(query_indices))
-        indices_src = torch.randint(0, len(query_indices), (n_random,), device=self.device)
-        indices_dest = torch.randint(0, len(database), (n_random,), device=self.device)
-        random_pairs = torch.stack([query_indices[indices_src], indices_dest])
+            n_random = int(self.hparams["randomisation"] * len(query_indices))
+            indices_src = torch.randint(0, len(query_indices), (n_random,), device=self.device)
+            indices_dest = torch.randint(0, len(database), (n_random,), device=self.device)
+            random_pairs = torch.stack([query_indices[indices_src], indices_dest])
+        else:
+            # Simulate randomness by simply taking a KNN of 1 for each point
+            random_pairs = knn(database, query, k = 2, batch_x = batch_index, batch_y = batch_index)
 
         edges = torch.cat([edges, random_pairs], dim=-1)
 
@@ -360,9 +372,51 @@ class EmbeddingBase(LightningModule):
         if self.logger.experiment is not None:
             self.logger.experiment.log(
                 {
-                label: self.plot_embedding_native(batch, spatial1, spatial2, uu_edges, ui_edges, ii_edges)
+                label: self.plot_embedding_native(batch, spatial1, spatial2, uu_edges, ui_edges, ii_edges),
+                "original_space": self.plot_original_space(batch, spatial1, spatial2, ui_edges),
                 }
             )
+
+    def plot_original_space(self, batch, spatial1, spatial2=None, ui_edges=None):
+
+        fig = go.Figure()
+
+        if ui_edges.shape[1] > 0:
+
+            users = ui_edges[0].unique().cpu()
+            representatives = ui_edges[1].unique().cpu()
+
+            user_embed = spatial1[users]
+            influencer_embed = spatial2[representatives]
+            all_embed = torch.cat([user_embed, influencer_embed], dim=0)
+
+            # if self.pca is None or self.trainer.current_epoch % 10 == 0:
+            #     self.pca = PCA(n_components=1)
+            #     all_embed = torch.cat([user_embed, influencer_embed], dim=0)
+            #     self.pca.fit(all_embed.cpu().numpy())
+
+            # Use an incremental PCA every 10 epochs
+            if self.pca is None:
+                self.pca = IncrementalPCA(n_components=1)
+                self.pca.partial_fit(all_embed.cpu().numpy())
+            elif self.trainer.current_epoch % 10 == 0:
+                self.pca.partial_fit(all_embed.cpu().numpy())
+
+            # Transform the embeddings
+            all_pca = self.pca.transform(all_embed.cpu().numpy())
+            user_pca = self.pca.transform(user_embed.cpu().numpy())
+            influencer_pca = self.pca.transform(influencer_embed.cpu().numpy())
+
+            
+            # plot the user embedding, with color given by the position in 1D PCA
+            # Make a color scale from all_pca
+            fig.add_trace(go.Scatter(x=batch.x[users,0].cpu(), y=batch.x[users,1].cpu(), mode='markers', marker=dict(cmin = all_pca.min(), cmax = all_pca.max(), color=user_pca[:,0], colorscale='Rainbow')))
+
+            # plot the representatives, with color given by the position in 1D PCA
+            fig.add_trace(go.Scatter(x=batch.x[representatives,0].cpu() + 0.01, y=batch.x[representatives,1].cpu() + 0.01, mode='markers', marker=dict(cmin = all_pca.min(), cmax = all_pca.max(), color=influencer_pca[:, 0], colorscale='Rainbow', symbol="star", size=14)))
+
+        return fig
+
 
     def plot_embedding_native(self, batch, spatial1, spatial2=None, uu_edges=None, ui_edges=None, ii_edges=None):
 
@@ -470,3 +524,4 @@ class EmbeddingBase(LightningModule):
                         showlegend=False,
                     )
                 )
+

@@ -105,7 +105,7 @@ def generate_single_track(i, min_r, max_r, num_layers, detector_width):
 
     x = np.linspace(0.05, detector_width + 0.05, num = num_layers)
     y = sign*(np.sqrt(r**2 - (x - r*np.cos(theta))**2) - r*np.sin(theta))
-    pid = np.array(len(x)*[i+1], dtype = np.int64)
+    pid = np.array(len(x)*[np.random.randint(0, 2**32)], dtype = np.int64)
     pt = 1000 * np.array(len(x)*[r])
     
     mask = (y == y)
@@ -130,6 +130,16 @@ def define_truth_graph(node_feature, ptcut):
     # Calculate all-same-PID truth graph
     all_edge_combinations = torch.cartesian_prod(torch.arange(len(node_feature)), torch.arange(len(node_feature))).T
     all_truth_graph = all_edge_combinations[:, node_feature[all_edge_combinations[0], 2] == node_feature[all_edge_combinations[1], 2]]
+    
+    # Check that all-same-PID truth graph is symmetric
+    increasing = all_truth_graph[0] < all_truth_graph[1]
+    equal = all_truth_graph[0] == all_truth_graph[1]
+    decreasing = all_truth_graph[0] > all_truth_graph[1]
+    assert increasing.sum() == decreasing.sum(), "Truth graph is not symmetric"
+
+    # Check that all self-edges are included
+    assert (all_truth_graph[0] == all_truth_graph[1]).sum() == len(node_feature), "Truth graph is missing self-edges"
+
     # Calculate signal truth graph
     sig_truth_graph = all_truth_graph[:, (node_feature[:, 3][all_truth_graph] > ptcut).all(0)]
 
@@ -140,10 +150,10 @@ def apply_nhits_min(event, nhits):
 
     _, inverse, counts = event.pid.unique(return_inverse = True, return_counts = True)
     event.nhits = counts[inverse]
-    event.pid[(event.nhits <= nhits)] = 0
+    event.pid[(event.nhits < nhits)] = 0
 
-    event.seq_signal_edges = event.seq_signal_edges[:, (event.nhits[event.seq_signal_edges] > nhits).all(0)]
-    event.all_signal_edges = event.all_signal_edges[:, (event.nhits[event.all_signal_edges] > nhits).all(0)]
+    # event.seq_signal_edges = event.seq_signal_edges[:, (event.nhits[event.seq_signal_edges] > nhits).all(0)]
+    event.edge_index = event.edge_index[:, (event.nhits[event.edge_index] > nhits).all(0)]
 
     return event
 
@@ -158,17 +168,17 @@ def generate_toy_event(num_tracks, track_dis_width, num_layers, min_r, max_r, de
     for i in range(num_tracks):
         track = generate_single_track(i, min_r, max_r, num_layers, detector_width)
         tracks.append(track)
-    
+
     # Stack together track features
     node_feature = np.concatenate(tracks, axis = 0)
     
     # Define truth and training graphs
-    _, seq_signal_truth_graph, _, sig_truth_graph = define_truth_graph(node_feature, ptcut) 
+    _, _, all_truth_graph, _ = define_truth_graph(node_feature, ptcut) 
     node_feature = torch.from_numpy(node_feature).float()
         
     event = Data(x=node_feature[:,0:2],
-                 seq_signal_edges = seq_signal_truth_graph,
-                 all_signal_edges = sig_truth_graph,
+                #  seq_signal_edges = seq_signal_truth_graph,
+                 edge_index = all_truth_graph,
                  pt = node_feature[:,3],
                  pid = node_feature[:,2].long(),
                 )
@@ -182,8 +192,8 @@ def generate_toy_dataset(num_events, num_tracks, track_dis_width, num_layers, mi
     for i in range(num_events):
         try:
             event = generate_toy_event(num_tracks, track_dis_width, num_layers, min_r, max_r, detector_width, ptcut, nhits)
-            if event.pid.max() > 0 and len(event.x) > 10:
+            if event.pid.max() > 0 and len(event.x) > 2*num_tracks:
                 dataset.append(event)
-        except Exception:
-            print("Error in event: ", i, "")
+        except Exception as e:
+            print("Error in event: ", i, "", e)
     return dataset

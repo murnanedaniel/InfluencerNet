@@ -1,8 +1,6 @@
 # InfluencerLoss for End-to-end Point Cloud Segmentation
     
-    [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-    [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/murnanedaniel/InfluencerNet.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/murnanedaniel/InfluencerNet/context:python)
-    [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.5522535.svg)](https://doi.org/10.5281/zenodo.5522535)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Introduction
 

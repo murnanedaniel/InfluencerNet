@@ -1,0 +1,23 @@
+name: influencer
+
+channels:
+    - pytorch
+    - pyg
+    - conda-forge
+
+dependencies:
+    - pytorch
+    - pytorch-cuda=11.7
+    - pyg
+    - pip
+    - pip:
+        - lightning
+        - matplotlib
+        - scipy
+        - pandas
+        - numpy 
+        - click
+        - plotly
+        - wandb
+
+    

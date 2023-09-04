@@ -137,10 +137,13 @@ dmypy.json
 *wandb*
 
 #extra plots
-src/Pipelines/Examples/notebooks/*.png
 *.root
 **/*.root
 
 # dataset and outputs
 *datasets*
 *artifacts*
+
+# development code
+*dev*
+*debug*

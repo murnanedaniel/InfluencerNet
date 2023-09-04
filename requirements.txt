@@ -1,0 +1,9 @@
+matplotlib
+scipy
+pandas
+numpy 
+click
+plotly
+wandb
+torch
+lightning

@@ -17,6 +17,13 @@ conda env create -f environment.yml
 conda activate influencer
 ```
 
+Note that this assumes compatibility with CUDA 11.7. Using other versions of CUDA is possible by tweaking the `environment.yml` and `requirements.txt` files at
+```
+- pytorch-cuda==11.7
+...
+--find-links https://data.pyg.org/whl/torch-2.0.0+cu117.html
+```
+
 ## Quickstart
 
 The fastest way to see the InfluencerLoss in action is through the example scripts that reproduce the results presented at CHEP2023. See the [CHEP example subfolder](examples/CHEP2023) for more details.

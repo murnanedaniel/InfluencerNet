@@ -2,22 +2,14 @@ name: influencer
 
 channels:
     - pytorch
+    - nvidia
     - pyg
     - conda-forge
 
 dependencies:
     - pytorch
-    - pytorch-cuda=11.7
+    - pytorch-cuda==11.7
     - pyg
     - pip
     - pip:
-        - lightning
-        - matplotlib
-        - scipy
-        - pandas
-        - numpy 
-        - click
-        - plotly
-        - wandb
-
-    
+        - -r file:requirements.txt

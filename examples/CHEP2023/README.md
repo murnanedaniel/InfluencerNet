@@ -19,16 +19,10 @@ The physics performance of the InfluencerLoss can be reproduced by running the f
 python train.py --config influencer_config.yml
 ```
 
-#### 2. Inference
+#### 2. Produce the Physics Performance Plots
 
 ```bash
-python infer.py --config influencer_config.yml
-```
-
-#### 3. Produce the Physics Performance Plots
-
-```bash
-python plot.py --config influencer_config.yml
+python eval.py --config influencer_config.yml
 ```
 
 ### Physics Performance of the Baseline ("NaiveLoss")
@@ -41,23 +35,17 @@ The physics performance of the baseline ("NaiveLoss") can be reproduced by runni
 python train.py --config naive_config.yml
 ```
 
-#### 2. Inference
+#### 2. Produce the Physics Performance Plots
 
 ```bash
-python infer.py --config naive_config.yml
+python eval.py --config naive_config.yml
 ```
-
-#### 3. Produce the Physics Performance Plots
-
-```bash
-python plot.py --config naive_config.yml
-```
-
+<!-- 
 **n.b.** Assuming you have produced both sets of track candidates from InfluencerLoss and NaiveLoss, you can subsequently produce the comparison plots found in the CHEP proceedings by running the following command:
 
 ```bash
 python plot.py --config influencer_config.yml naive_config.yml
-```
+``` -->
 
 #### Computational Performance
 

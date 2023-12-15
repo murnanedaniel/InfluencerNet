@@ -28,7 +28,7 @@ num_heads: 2
 knn: 50
 margin: 1.0
 radius: 1.0
-user_user_pos_ratio: 1.0
+follower_follower_pos_ratio: 1.0
 
 warmup: 10
 lr: 0.001

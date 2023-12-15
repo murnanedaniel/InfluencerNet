@@ -2,14 +2,14 @@ import os
 import sys
 import yaml
 import click
+import torch
 
 try:
     import wandb
 except ImportError:
     wandb = None
 
-from .utils import get_module, get_trainer, find_latest_checkpoint
-
+from utils import get_module, get_trainer, find_latest_checkpoint
 
 @click.command()
 @click.argument("config_file")
@@ -20,7 +20,6 @@ def main(config_file, checkpoint):
     """
     evaluate(config_file, checkpoint)
 
-
 def evaluate(config_file, checkpoint=None):
     # load config
     with open(config_file, "r") as f:
@@ -28,14 +27,11 @@ def evaluate(config_file, checkpoint=None):
 
     print(yaml.dump(config))
 
-    # setup stage
-    os.makedirs(config["artifact_dir"], exist_ok=True)
-
     checkpoint_path = (
         checkpoint
         if checkpoint
         else find_latest_checkpoint(
-            config["stage_dir"], templates=["best*.ckpt", "*.ckpt"]
+            config["artifacts"], templates=["best*.ckpt", "*.ckpt"]
         )
     )
     if not checkpoint_path:
@@ -55,7 +51,7 @@ def evaluate(config_file, checkpoint=None):
     trainer = get_trainer(config, default_root_dir)
     with torch.inference_mode():
         trainer.test(module)
-
+    
 
 if __name__ == "__main__":
     main()

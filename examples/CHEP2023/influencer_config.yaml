@@ -1,47 +1,50 @@
-artifacts: /global/cfs/cdirs/m3443/data/lightning_models/lightning_checkpoints
-input_dir: /global/cfs/cdirs/m3443/data/GNN4ITK/CommonFrameworkExamples/Example_3_Dev_B/feature_store
+artifacts: /YOUR_DATA_DIRECTORY/GeometricTracking_LowLumiStudy
+input_dir: /YOUR_DATA_DIRECTORY/feature_store/
 dataset: TrackMLDataset
-project: GeometricTracking_CHEP_Refactor
-model: Influencer
+project: GeometricTracking_LowLumiStudy
+model: InfluencerModel
 network: InfluencerTransformer
 
 gpus: 1
 nodes: 1
+logging_level: INFO # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
 hard_cuts:
   pt: [1.0, .inf] # GeV 
 
 # Dataset parameters
-data_split: [80, 10, 10] # Number of [training, validation, testing] examples
+data_split: [200, 10, 10] # Number of [training, validation, testing] examples
 batch_size: 1
-num_tracks: 100
+num_tracks: 10
 num_layer: 30
 
 # Model parameters
 spatial_channels: 6
-emb_hidden: 128
+emb_hidden: 256
 emb_dim: 12
-nb_layer: 4
+nb_layer: 3
+nb_transformer_layers: 6
 activation: ReLU
-num_heads: 2
+num_heads: 4
 
 knn: 50
-radius: 0.1
-margin: 0.1
-influencer_margin: 0.3
+radius: 1.0
+margin: 1.0
+influencer_margin: 1.0
 randomisation: 1
 points_per_batch: 100000
+val_radius: 1.0
 
-user_user_weight: 0.0
-user_user_pos_ratio: 1.0
-user_influencer_weight: 0.2
-user_influencer_neg_ratio: 0.0
+follower_follower_weight: 0.0
+follower_follower_pos_ratio: 1.0
+follower_influencer_weight: 1.0
+follower_influencer_neg_ratio: 1.0
 influencer_influencer_weight: 1.0
-scatter_loss: False
-warmup: 10
-lr: 0.001
+scheduler: lambda
+warmup: 30
+lr: 0.0001
 gradient_clip: 
-factor: 1
-patience: 30
-regime: [rp, hnm, norm, radius]
-max_epochs: 100
+factor: 0.8
+patience: 100
+regime: [rp, hnm]
+max_epochs: 500

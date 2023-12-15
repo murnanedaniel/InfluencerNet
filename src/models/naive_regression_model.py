@@ -69,7 +69,7 @@ class NaiveRegressionModel(ObjectCondensationBase):
             batch.batched_cluster_id, return_inverse=True
         )
 
-        # Get the user and influencer embeddings
+        # Get the follower and influencer embeddings
         input_data = self.get_input_data(batch)
 
         regression_truth = self.get_regression_truth(batch)
@@ -103,7 +103,7 @@ class NaiveRegressionModel(ObjectCondensationBase):
             batch.batched_cluster_id, return_inverse=True
         )
 
-        # Get the user and influencer embeddings
+        # Get the follower and influencer embeddings
         input_data = self.get_input_data(batch)
 
         regression_truth = self.get_regression_truth(batch)

@@ -37,7 +37,7 @@ class NaiveTransformer(nn.Module):
             self.transformer_layer, num_layers=hparams["nb_layer"]
         )
 
-        self.user_network = make_mlp(
+        self.follower_network = make_mlp(
             hparams["emb_hidden"],
             [hparams["emb_hidden"]] * hparams["nb_layer"] + [hparams["emb_dim"]],
             hidden_activation=hparams["activation"],
@@ -59,12 +59,12 @@ class NaiveTransformer(nn.Module):
         else:
             x = self.transformer_encoder(x.unsqueeze(0)).squeeze(0)
 
-        user_out = self.user_network(x)
+        follower_out = self.follower_network(x)
 
         if "norm" in self.regime:
-            user_out = F.normalize(user_out)
+            follower_out = F.normalize(follower_out)
 
             if "radius" in self.regime:
-                user_out = self.radius * user_out
+                follower_out = self.radius * follower_out
 
-        return user_out
+        return follower_out

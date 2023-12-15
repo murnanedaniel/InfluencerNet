@@ -43,7 +43,7 @@ class InfluencerTransformer(nn.Module):
             self.transformer_layer, num_layers=hparams["nb_transformer_layers"]
         )
 
-        self.user_network = make_mlp(
+        self.follower_network = make_mlp(
             hparams["emb_hidden"],
             [hparams["emb_hidden"]] * hparams["nb_layer"] + [hparams["emb_dim"]],
             hidden_activation=hparams["activation"],
@@ -73,15 +73,15 @@ class InfluencerTransformer(nn.Module):
         else:
             x = self.transformer_encoder(x.unsqueeze(0)).squeeze(0)
 
-        user_out = self.user_network(x)
+        follower_out = self.follower_network(x)
         influencer_out = self.influencer_network(x)
 
         if "norm" in self.regime:
-            user_out = F.normalize(user_out)
+            follower_out = F.normalize(follower_out)
             influencer_out = F.normalize(influencer_out)
 
             if "radius" in self.regime:
-                user_out = self.radius * user_out
+                follower_out = self.radius * follower_out
                 influencer_out = self.radius * influencer_out
 
-        return user_out, influencer_out
+        return follower_out, influencer_out

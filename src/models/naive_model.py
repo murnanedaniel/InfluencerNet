@@ -84,9 +84,9 @@ class NaiveModel(ObjectCondensationBase):
 
         return training_edges, training_truth
 
-    def get_user_user_loss(self, user_user_edges, user_user_truth, user_embed):
+    def get_follower_follower_loss(self, follower_follower_edges, follower_follower_truth, follower_embed):
         hinge, d = self.get_hinge_distance(
-            user_embed, user_embed, user_user_edges, user_user_truth
+            follower_embed, follower_embed, follower_follower_edges, follower_follower_truth
         )
 
         if (hinge == -1).any():
@@ -111,23 +111,23 @@ class NaiveModel(ObjectCondensationBase):
         else:
             positive_loss = 0
 
-        return negative_loss + self.hparams["user_user_pos_ratio"] * positive_loss
+        return negative_loss + self.hparams["follower_follower_pos_ratio"] * positive_loss
 
     def training_step(self, batch, batch_idx):
         """
         The OC training step.
-        1. Runs the model in no_grad mode to get the user and influencer embeddings
-        2. Builds hard negative, random pairs, and true edges for the user-user loss
-        3. Calculate the "user-user" loss
+        1. Runs the model in no_grad mode to get the follower and influencer embeddings
+        2. Builds hard negative, random pairs, and true edges for the follower-follower loss
+        3. Calculate the "follower-follower" loss
         """
 
-        # Get the user and influencer embeddings
+        # Get the follower and influencer embeddings
         input_data = self.get_input_data(batch)
-        user_embed = self(input_data, batch=batch.batch)
-        user_user_edges, user_user_truth = self.get_training_edges(
+        follower_embed = self(input_data, batch=batch.batch)
+        follower_follower_edges, follower_follower_truth = self.get_training_edges(
             batch,
-            user_embed,
-            user_embed,
+            follower_embed,
+            follower_embed,
             hnm=True,
             rp=True,
             tp=True,
@@ -135,7 +135,7 @@ class NaiveModel(ObjectCondensationBase):
         )
 
         # Calculate the total loss
-        loss = self.get_user_user_loss(user_user_edges, user_user_truth, user_embed)
+        loss = self.get_follower_follower_loss(follower_follower_edges, follower_follower_truth, follower_embed)
 
         self.log_dict({"train_loss": loss}, on_epoch=True)
 
@@ -145,11 +145,11 @@ class NaiveModel(ObjectCondensationBase):
 
         return loss
 
-    def get_condensation_edges(self, batch, user_embed):
+    def get_condensation_edges(self, batch, follower_embed):
         # Build candidate edges as radius graph with all vertices as query and database
         candidate_edges = build_edges(
-            user_embed,
-            user_embed,
+            follower_embed,
+            follower_embed,
             r_max=self.hparams["radius"],
             k_max=100,
             batch_index=batch.batch,
@@ -159,7 +159,7 @@ class NaiveModel(ObjectCondensationBase):
         # Loop over vertices, and add edges to final list if vertex is not already in an edge
         condensation_edges = torch.empty([2, 0], dtype=torch.int64, device=self.device)
 
-        for condensation_index in torch.randperm(user_embed.shape[0]):
+        for condensation_index in torch.randperm(follower_embed.shape[0]):
             # If the vertex is already in an edge, skip it
             if condensation_index in condensation_edges:
                 continue
@@ -192,12 +192,12 @@ class NaiveModel(ObjectCondensationBase):
         # Start validation tracking
         self.start_validation_tracking()
 
-        # Get the user embeddings
-        user_embed = self(input_data, batch.batch)
+        # Get the follower embeddings
+        follower_embed = self(input_data, batch.batch)
 
         # Get the condensation edges and their truth values
-        user_influencer_edges, user_influencer_truth = self.get_condensation_edges(
-            batch, user_embed
+        follower_influencer_edges, follower_influencer_truth = self.get_condensation_edges(
+            batch, follower_embed
         )
 
         # End validation tracking
@@ -205,19 +205,19 @@ class NaiveModel(ObjectCondensationBase):
 
         # Try to get the training edges and calculate the loss
         try:
-            user_user_edges, user_user_truth = self.get_training_edges(
+            follower_follower_edges, follower_follower_truth = self.get_training_edges(
                 batch,
-                user_embed,
-                user_embed,
+                follower_embed,
+                follower_embed,
                 hnm=True,
                 knn=500,
                 self_loop=True,
                 batch_index=batch.batch,
             )
-            loss = self.get_user_user_loss(user_user_edges, user_user_truth, user_embed)
+            loss = self.get_follower_follower_loss(follower_follower_edges, follower_follower_truth, follower_embed)
         except Exception:
             # If an exception occurs, initialize empty edges and zero loss
-            user_user_edges, user_user_truth = torch.empty(
+            follower_follower_edges, follower_follower_truth = torch.empty(
                 [2, 0], dtype=torch.int64, device=self.device
             ), torch.empty([0], dtype=torch.int64, device=self.device)
             loss = torch.tensor(0, dtype=torch.float32, device=self.device)
@@ -227,13 +227,13 @@ class NaiveModel(ObjectCondensationBase):
 
         # Calculate various metrics
         cluster_eff, cluster_pur = self.get_cluster_metrics(
-            batch, user_user_edges, user_user_truth
+            batch, follower_follower_edges, follower_follower_truth
         )
         represent_eff, represent_pur, represent_dup = self.get_representative_metrics(
-            batch, user_influencer_edges, user_influencer_truth
+            batch, follower_influencer_edges, follower_influencer_truth
         )
         tracking_eff, tracking_pur, tracking_dup = self.get_tracking_metrics(
-            batch, user_influencer_edges, user_influencer_truth
+            batch, follower_influencer_edges, follower_influencer_truth
         )
 
         # Try to log the metrics
@@ -265,12 +265,12 @@ class NaiveModel(ObjectCondensationBase):
 
             self.log_embedding_plot(
                 batch,
-                user_embed[batch_mask],
-                spatial2=user_embed[batch_mask],
-                ui_edges=user_influencer_edges[
-                    :, batch_mask[user_influencer_edges].all(dim=0)
+                follower_embed[batch_mask],
+                spatial2=follower_embed[batch_mask],
+                ui_edges=follower_influencer_edges[
+                    :, batch_mask[follower_influencer_edges].all(dim=0)
                 ],
-                uu_edges=user_user_edges[:, batch_mask[user_user_edges].all(dim=0)],
+                uu_edges=follower_follower_edges[:, batch_mask[follower_follower_edges].all(dim=0)],
             )
 
         # Return the loss and metrics
@@ -279,9 +279,9 @@ class NaiveModel(ObjectCondensationBase):
             "represent_pur": represent_pur,
             "represent_eff": represent_eff,
             "represent_dup": represent_dup,
-            "user_user_edges": user_user_edges,
-            "user_user_truth": user_user_truth,
-            "user_embed": user_embed,
-            "user_influencer_edges": user_influencer_edges,
-            "user_influencer_truth": user_influencer_truth,
+            "follower_follower_edges": follower_follower_edges,
+            "follower_follower_truth": follower_follower_truth,
+            "follower_embed": follower_embed,
+            "follower_influencer_edges": follower_influencer_edges,
+            "follower_influencer_truth": follower_influencer_truth,
         }

@@ -29,9 +29,9 @@ class InfluencerRegressionModel(InfluencerModel):
     def training_step(self, batch, batch_idx):
         """
         The Influencer training step.
-        1. Runs the model in no_grad mode to get the user and influencer embeddings
-        2. Builds hard negative, random pairs, and true edges for the user-user loss
-        3. Build hard negatives and true edges for the user-influencer loss
+        1. Runs the model in no_grad mode to get the follower and influencer embeddings
+        2. Builds hard negative, random pairs, and true edges for the follower-follower loss
+        3. Build hard negatives and true edges for the follower-influencer loss
         4. Build true edges for the influencer-influencer loss
         5. Compute the influencer loss
         6. Obtains influencer hits that have neighbors
@@ -39,26 +39,26 @@ class InfluencerRegressionModel(InfluencerModel):
         8. Computes the regression loss
         """
 
-        # Get the user and influencer embeddings
+        # Get the follower and influencer embeddings
         input_data = self.get_input_data(batch)
         with torch.no_grad():
-            user_embed, influencer_embed, regression_output = self(
+            follower_embed, influencer_embed, regression_output = self(
                 input_data, batch.batch
             )
 
         # Get the training edges for each loss function
-        user_user_edges, user_user_truth = self.get_training_edges(
+        follower_follower_edges, follower_follower_truth = self.get_training_edges(
             batch,
-            user_embed,
-            user_embed,
+            follower_embed,
+            follower_embed,
             hnm=True,
             rp=True,
             tp=True,
             batch_index=batch.batch,
         )
-        user_influencer_edges, user_influencer_truth = self.get_training_edges(
+        follower_influencer_edges, follower_influencer_truth = self.get_training_edges(
             batch,
-            user_embed,
+            follower_embed,
             influencer_embed,
             hnm=True,
             tp=True,
@@ -80,10 +80,10 @@ class InfluencerRegressionModel(InfluencerModel):
 
         # Get the hits of interest
         included_hits = torch.cat(
-            [user_user_edges, user_influencer_edges, influencer_influencer_edges], dim=1
+            [follower_follower_edges, follower_influencer_edges, influencer_influencer_edges], dim=1
         ).unique()
         (
-            user_embed[included_hits],
+            follower_embed[included_hits],
             influencer_embed[included_hits],
             regression_output[included_hits],
         ) = self(input_data[included_hits], batch.batch[included_hits])
@@ -91,27 +91,27 @@ class InfluencerRegressionModel(InfluencerModel):
         # Calculate each loss function
 
         infl_loss, sublosses = influencer_loss(
-            user_embed,
+            follower_embed,
             influencer_embed,
             batch,
-            user_user_edges,
-            user_user_truth,
-            user_influencer_edges,
-            user_influencer_truth,
+            follower_follower_edges,
+            follower_follower_truth,
+            follower_influencer_edges,
+            follower_influencer_truth,
             influencer_influencer_edges,
             influencer_influencer_truth,
-            user_user_weight=self.user_user_weight,
-            user_influencer_weight=self.user_influencer_weight,
+            follower_follower_weight=self.follower_follower_weight,
+            follower_influencer_weight=self.follower_influencer_weight,
             influencer_influencer_weight=self.influencer_influencer_weight,
-            user_user_pos_ratio=self.hparams["user_user_pos_ratio"],
-            user_influencer_neg_ratio=self.hparams["user_influencer_neg_ratio"],
-            user_margin=self.hparams["margin"],
+            follower_follower_pos_ratio=self.hparams["follower_follower_pos_ratio"],
+            follower_influencer_neg_ratio=self.hparams["follower_influencer_neg_ratio"],
+            follower_margin=self.hparams["margin"],
             influencer_margin=self.hparams["influencer_margin"],
             device=self.device,
             scatter_loss=self.hparams["scatter_loss"],
         )
 
-        influential_hits = torch.unique(user_influencer_edges[1])
+        influential_hits = torch.unique(follower_influencer_edges[1])
         influencers_predictions = regression_output[influential_hits]
 
         reg_loss = self.regression_loss(
@@ -127,8 +127,8 @@ class InfluencerRegressionModel(InfluencerModel):
             {
                 "train_loss": loss,
                 "train_influencer_loss": infl_loss,
-                "train_user_user_loss": sublosses["user_user_loss"],
-                "train_user_influencer_loss": sublosses["user_influencer_loss"],
+                "train_follower_follower_loss": sublosses["follower_follower_loss"],
+                "train_follower_influencer_loss": sublosses["follower_influencer_loss"],
                 "train_influencer_influencer_loss": sublosses[
                     "influencer_influencer_loss"
                 ],
@@ -158,32 +158,32 @@ class InfluencerRegressionModel(InfluencerModel):
     def shared_evaluation(self, batch, batch_idx):
         input_data = self.get_input_data(batch)
         self.start_validation_tracking()
-        user_embed, influencer_embed = self(input_data, batch.batch)
+        follower_embed, influencer_embed = self(input_data, batch.batch)
 
         try:
-            user_influencer_edges, user_influencer_truth = self.get_training_edges(
+            follower_influencer_edges, follower_influencer_truth = self.get_training_edges(
                 batch,
-                user_embed,
+                follower_embed,
                 influencer_embed,
                 hnm=True,
                 knn=500,
                 batch_index=batch.batch,
             )
         except Exception:
-            user_influencer_edges, user_influencer_truth = torch.empty(
+            follower_influencer_edges, follower_influencer_truth = torch.empty(
                 [2, 0], dtype=torch.int64, device=self.device
             ), torch.empty([0], dtype=torch.int64, device=self.device)
         try:
-            user_user_edges, user_user_truth = self.get_training_edges(
+            follower_follower_edges, follower_follower_truth = self.get_training_edges(
                 batch,
-                user_embed,
-                user_embed,
+                follower_embed,
+                follower_embed,
                 hnm=True,
                 knn=500,
                 batch_index=batch.batch,
             )
         except Exception:
-            user_user_edges, user_user_truth = torch.empty(
+            follower_follower_edges, follower_follower_truth = torch.empty(
                 [2, 0], dtype=torch.int64, device=self.device
             ), torch.empty([0], dtype=torch.int64, device=self.device)
         try:
@@ -206,21 +206,21 @@ class InfluencerRegressionModel(InfluencerModel):
 
         # Compute the total loss
         loss, sublosses = influencer_loss(
-            user_embed,
+            follower_embed,
             influencer_embed,
             batch,
-            user_user_edges,
-            user_user_truth,
-            user_influencer_edges,
-            user_influencer_truth,
+            follower_follower_edges,
+            follower_follower_truth,
+            follower_influencer_edges,
+            follower_influencer_truth,
             influencer_influencer_edges,
             influencer_influencer_truth,
-            user_user_weight=self.user_user_weight,
-            user_influencer_weight=self.user_influencer_weight,
+            follower_follower_weight=self.follower_follower_weight,
+            follower_influencer_weight=self.follower_influencer_weight,
             influencer_influencer_weight=self.influencer_influencer_weight,
-            user_user_pos_ratio=self.hparams["user_user_pos_ratio"],
-            user_influencer_neg_ratio=self.hparams["user_influencer_neg_ratio"],
-            user_margin=self.hparams["margin"],
+            follower_follower_pos_ratio=self.hparams["follower_follower_pos_ratio"],
+            follower_influencer_neg_ratio=self.hparams["follower_influencer_neg_ratio"],
+            follower_margin=self.hparams["margin"],
             influencer_margin=self.hparams["influencer_margin"],
             device=self.device,
             scatter_loss=self.hparams["scatter_loss"],
@@ -229,13 +229,13 @@ class InfluencerRegressionModel(InfluencerModel):
         current_lr = self.optimizers().param_groups[0]["lr"]
 
         cluster_eff, cluster_pur = self.get_cluster_metrics(
-            batch, user_user_edges, user_user_truth
+            batch, follower_follower_edges, follower_follower_truth
         )
         represent_eff, represent_pur, represent_dup = self.get_representative_metrics(
-            batch, user_influencer_edges, user_influencer_truth
+            batch, follower_influencer_edges, follower_influencer_truth
         )
         tracking_eff, tracking_pur, tracking_dup = self.get_tracking_metrics(
-            batch, user_influencer_edges, user_influencer_truth
+            batch, follower_influencer_edges, follower_influencer_truth
         )
 
         with contextlib.suppress(Exception):
@@ -248,8 +248,8 @@ class InfluencerRegressionModel(InfluencerModel):
                     "represent_eff": represent_eff,
                     "represent_dup": represent_dup,
                     "lr": current_lr,
-                    "user_user_loss": sublosses["user_user_loss"],
-                    "user_influencer_loss": sublosses["user_influencer_loss"],
+                    "follower_follower_loss": sublosses["follower_follower_loss"],
+                    "follower_influencer_loss": sublosses["follower_influencer_loss"],
                     "influencer_influencer_loss": sublosses[
                         "influencer_influencer_loss"
                     ],
@@ -267,14 +267,14 @@ class InfluencerRegressionModel(InfluencerModel):
             first_event = Batch.to_data_list(batch)[0]
             batch_mask = batch.batch == 0
 
-            # self.log_embedding_plot(batch, user_embed[pid_mask], spatial2=influencer_embed[pid_mask], uu_edges=user_user_edges, ui_edges=user_influencer_edges, ii_edges=influencer_influencer_edges)
+            # self.log_embedding_plot(batch, follower_embed[pid_mask], spatial2=influencer_embed[pid_mask], uu_edges=follower_follower_edges, ui_edges=follower_influencer_edges, ii_edges=influencer_influencer_edges)
             self.log_embedding_plot(
                 batch,
-                user_embed[batch_mask],
+                follower_embed[batch_mask],
                 spatial2=influencer_embed[batch_mask],
-                uu_edges=user_user_edges[:, batch_mask[user_user_edges].all(dim=0)],
-                ui_edges=user_influencer_edges[
-                    :, batch_mask[user_influencer_edges].all(dim=0)
+                uu_edges=follower_follower_edges[:, batch_mask[follower_follower_edges].all(dim=0)],
+                ui_edges=follower_influencer_edges[
+                    :, batch_mask[follower_influencer_edges].all(dim=0)
                 ],
                 ii_edges=influencer_influencer_edges[
                     :, batch_mask[influencer_influencer_edges].all(dim=0)
@@ -289,16 +289,16 @@ class InfluencerRegressionModel(InfluencerModel):
             "represent_eff": represent_eff,
             "represent_dup": represent_dup,
             "lr": current_lr,
-            "user_user_loss": sublosses["user_user_loss"],
-            "user_influencer_loss": sublosses["user_influencer_loss"],
+            "follower_follower_loss": sublosses["follower_follower_loss"],
+            "follower_influencer_loss": sublosses["follower_influencer_loss"],
             "influencer_influencer_loss": sublosses["influencer_influencer_loss"],
-            "user_user_edges": user_user_edges,
-            "user_user_truth": user_user_truth,
-            "user_influencer_edges": user_influencer_edges,
-            "user_influencer_truth": user_influencer_truth,
+            "follower_follower_edges": follower_follower_edges,
+            "follower_follower_truth": follower_follower_truth,
+            "follower_influencer_edges": follower_influencer_edges,
+            "follower_influencer_truth": follower_influencer_truth,
             "influencer_influencer_edges": influencer_influencer_edges,
             "influencer_influencer_truth": influencer_influencer_truth,
-            "user_embed": user_embed,
+            "follower_embed": follower_embed,
             "influencer_embed": influencer_embed,
         }
 
@@ -327,13 +327,13 @@ class InfluencerRegressionModel(InfluencerModel):
             )
 
     @property
-    def user_influencer_weight(self):
-        return self.get_weight("user_influencer_weight")
+    def follower_influencer_weight(self):
+        return self.get_weight("follower_influencer_weight")
 
     @property
     def influencer_influencer_weight(self):
         return self.get_weight("influencer_influencer_weight")
 
     @property
-    def user_user_weight(self):
-        return self.get_weight("user_user_weight")
+    def follower_follower_weight(self):
+        return self.get_weight("follower_follower_weight")

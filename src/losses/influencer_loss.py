@@ -1,175 +1,69 @@
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from torch_geometric.nn import aggr
-import sys
-import traceback
+from torch_geometric.data import Batch
 
-sqrt_eps = 1e-12
-
-
-class InfluencerLoss(nn.Module):
-    def __init__(
-        self,
-        user_influencer_weight=1.0,
-        influencer_influencer_weight=1.0,
-        user_influencer_neg_ratio=1.0,
-        user_margin=1.0,
-        influencer_margin=1.0,
-        device="cpu",
-        scatter_loss=False,
-    ):
-        super(InfluencerLoss, self).__init__()
-        self.user_influencer_weight = user_influencer_weight
-        self.influencer_influencer_weight = influencer_influencer_weight
-        self.user_influencer_neg_ratio = user_influencer_neg_ratio
-        self.user_margin = user_margin
-        self.influencer_margin = influencer_margin
-        self.device = device
-        self.scatter_loss = scatter_loss
-
-    def forward(
-        self,
-        user_embed,
-        influencer_embed,
-        batch,
-        user_influencer_edges,
-        user_influencer_truth,
-        influencer_influencer_edges,
-        influencer_influencer_truth,
-    ):
-        user_influencer_loss = self.get_user_influencer_loss(
-            batch,
-            user_influencer_edges,
-            user_influencer_truth,
-            user_embed,
-            influencer_embed,
-        )
-        influencer_influencer_loss = self.get_influencer_influencer_loss(
-            influencer_influencer_edges, influencer_influencer_truth, influencer_embed
-        )
-
-        loss = (
-            self.user_influencer_weight * user_influencer_loss
-            + self.influencer_influencer_weight * influencer_influencer_loss
-        )
-        return loss
-
-    def get_user_influencer_loss(
-        self,
-        batch,
-        user_influencer_edges,
-        user_influencer_truth,
-        user_embed,
-        influencer_embed,
-    ):
-        return get_user_influencer_loss(
-            batch,
-            user_influencer_edges,
-            user_influencer_truth,
-            user_embed,
-            influencer_embed,
-            self.user_influencer_weight,
-            self.user_influencer_neg_ratio,
-            self.margin,
-            self.device,
-            self.scatter_loss,
-        )
-
-    def get_influencer_influencer_loss(
-        self, influencer_influencer_edges, influencer_influencer_truth, influencer_embed
-    ):
-        return get_influencer_influencer_loss(
-            influencer_influencer_edges,
-            influencer_influencer_truth,
-            influencer_embed,
-            self.influencer_influencer_weight,
-            self.influencer_margin,
-            self.device,
-        )
-
-
+EPSILON = 1e-12
+DEFAULT_DIMENSION = 0
 mean_agg = aggr.MeanAggregation()
 
+def calculate_sparse_positive_loss(batch: Batch, follower_embed: torch.Tensor, influencer_embed: torch.Tensor, follower_margin: float) -> torch.Tensor:
+    """
+    Calculate the sparse positive loss.
 
-def geometric_mean(x, dim=0):
-    return torch.exp(torch.mean(torch.log(x), dim=dim))
+    Parameters:
+    batch (Batch): The batch of data.
+    follower_embed (torch.Tensor): The follower embeddings.
+    influencer_embed (torch.Tensor): The influencer embeddings.
+    follower_margin (float): The follower margin.
 
+    Returns:
+    torch.Tensor: The calculated sparse positive loss.
+    """
+    dist_sq = torch.sum((follower_embed[batch.edge_index[0]] - influencer_embed[batch.edge_index[1]]) ** 2, dim=-1)
+    follower_sum = mean_agg(dist_sq, batch.edge_index[1], dim_size=batch.pid.shape[0], dim=0) / follower_margin**2
+    follower_sum = torch.log(follower_sum)
+    _, inverse_indices = torch.unique(batch.pid, return_inverse=True)
+    influencer_prod = mean_agg(follower_sum, inverse_indices, dim=0)
+    return torch.exp(influencer_prod).mean()
 
-def get_user_influencer_loss(
-    batch,
-    user_influencer_edges,
-    user_influencer_truth,
-    user_embed,
-    influencer_embed,
-    user_influencer_weight,
-    user_influencer_neg_ratio,
-    user_margin,
-    device,
-    scatter_loss,
-):
-    if not scatter_loss:
-        positive_loss = []
-        pid, particle_length = batch.pid.unique(return_counts=True)
-        # TODO: HANDLE THIS CHECK IN THE FUNCTION/CLASS WAY!
-        if particle_length.max() > 30:
-            print(
-                "Too many particles in batch",
-                particle_length[particle_length > 30],
-                pid[particle_length > 30],
-            )
+def get_follower_influencer_loss(
+    batch: Batch,
+    follower_influencer_edges: torch.Tensor,
+    follower_influencer_truth: torch.Tensor,
+    follower_embed: torch.Tensor,
+    influencer_embed: torch.Tensor,
+    follower_influencer_weight: float,
+    follower_influencer_neg_ratio: float,
+    follower_margin: float,
+    device: torch.device,
+) -> torch.Tensor:
+    """
+    Calculate the follower influencer loss.
 
-        for pid, particle_length in torch.stack(batch.pid.unique(return_counts=True)).T:
-            true_hits = torch.where(batch.pid == pid)[0]
-            true_mesh = torch.meshgrid(true_hits, true_hits)
+    Parameters:
+    batch (Batch): The batch of data.
+    follower_influencer_edges (torch.Tensor): The follower influencer edges.
+    follower_influencer_truth (torch.Tensor): The follower influencer truth values.
+    follower_embed (torch.Tensor): The follower embeddings.
+    influencer_embed (torch.Tensor): The influencer embeddings.
+    follower_influencer_weight (float): The follower influencer weight.
+    follower_influencer_neg_ratio (float): The follower influencer negative ratio.
+    follower_margin (float): The follower margin.
+    device (torch.device): The device to use for computations.
 
-            dist_sq = torch.sum(
-                (user_embed[true_mesh[0]] - influencer_embed[true_mesh[1]]) ** 2, dim=-1
-            )  # SQREUCLIDEAN
-            dist = torch.sqrt(dist_sq + sqrt_eps)  # EUCLIDEAN
-            follower_sum = dist.mean(dim=0)  # / user_margin # EUCLIDEAN
-            influencer_prod = geometric_mean(follower_sum, dim=0)
-
-            # Check if influencer_prod is nan or inf
-            try:
-                assert not torch.isnan(influencer_prod) and not torch.isinf(influencer_prod)
-            except AssertionError:
-                print(
-                    f"Influencer prod is nan or inf... \n Influencer prod: {influencer_prod} \n pid: {pid} \n particle_length: {particle_length} \n dist_sq: {dist_sq} \n dist: {dist} \n follower_sum: {follower_sum} \n user_embed: {user_embed[true_mesh[0]]} \n influencer_embed: {influencer_embed[true_mesh[1]]}"
-                )
-                sys.exit()
-
-            positive_loss.append(influencer_prod)
-        positive_loss = torch.stack(positive_loss).mean()
-
-    else:
-        # Sparse version
-        dist_sq = torch.sum(
-            (user_embed[batch.edge_index[0]] - influencer_embed[batch.edge_index[1]])
-            ** 2,
-            dim=-1,
-        )  # SQREUCLIDEAN
-        # dist = torch.sqrt(dist_sq + sqrt_eps) # EUCLIDEAN
-        # follower_sum = mean_agg(dist, batch.edge_index[1], dim_size=batch.pid.shape[0], dim=0) / user_margin # EUCLIDEAN
-        follower_sum = (
-            mean_agg(dist_sq, batch.edge_index[1], dim_size=batch.pid.shape[0], dim=0)
-            / user_margin**2
-        )  # SQREUCLIDEAN
-        follower_sum = torch.log(follower_sum)
-        # Get an indexable PID for each node. Currently the PID of each node (batch.pid) is a unique number for each particle, but not necessarily a continuous index.
-        _, inverse_indices = torch.unique(batch.pid, return_inverse=True)
-        influencer_prod = mean_agg(follower_sum, inverse_indices, dim=0)
-        influencer_prod = torch.exp(influencer_prod)
-        positive_loss = influencer_prod.mean()
-
+    Returns:
+    torch.Tensor: The calculated follower influencer loss.
+    """
+    positive_loss = calculate_sparse_positive_loss(batch, follower_embed, influencer_embed, follower_margin)
+    
     hinge, d = get_hinge_distance(
-        user_embed, influencer_embed, user_influencer_edges, user_influencer_truth
+        follower_embed, influencer_embed, follower_influencer_edges, follower_influencer_truth
     )
 
     if (hinge == -1).any():
         negative_loss = (
             torch.stack(
-                [user_margin - d[hinge == -1], torch.zeros_like(d[hinge == -1])], dim=1
+                [follower_margin - d[hinge == -1], torch.zeros_like(d[hinge == -1])], dim=1
             )
             .max(dim=1)[0]
             .pow(2)
@@ -180,21 +74,33 @@ def get_user_influencer_loss(
 
     loss = torch.tensor(0, dtype=torch.float32, device=device)
     if not torch.isnan(negative_loss):
-        loss += user_influencer_neg_ratio * negative_loss
+        loss += follower_influencer_neg_ratio * negative_loss
     if not torch.isnan(positive_loss):
         loss += positive_loss
-    return user_influencer_weight * loss
-
+    return follower_influencer_weight * loss
 
 def get_influencer_influencer_loss(
-    influencer_influencer_edges,
-    influencer_influencer_truth,
-    influencer_embed,
-    influencer_influencer_weight,
-    influencer_margin,
-    device,
-    loss_type="hinge",
-):
+    influencer_influencer_edges: torch.Tensor,
+    influencer_influencer_truth: torch.Tensor,
+    influencer_embed: torch.Tensor,
+    influencer_influencer_weight: float,
+    influencer_margin: float,
+    device: torch.device,
+) -> torch.Tensor:
+    """
+    Calculate the influencer influencer loss.
+
+    Parameters:
+    influencer_influencer_edges (torch.Tensor): The influencer influencer edges.
+    influencer_influencer_truth (torch.Tensor): The influencer influencer truth values.
+    influencer_embed (torch.Tensor): The influencer embeddings.
+    influencer_influencer_weight (float): The influencer influencer weight.
+    influencer_margin (float): The influencer margin.
+    device (torch.device): The device to use for computations.
+
+    Returns:
+    torch.Tensor: The calculated influencer influencer loss.
+    """
     _, d = get_hinge_distance(
         influencer_embed,
         influencer_embed,
@@ -202,84 +108,94 @@ def get_influencer_influencer_loss(
         influencer_influencer_truth,
     )
 
-    if loss_type == "hinge":
-        loss = (
+    loss = (
             torch.stack([influencer_margin - d, torch.zeros_like(d)], dim=1)
-            .max(dim=1)[0]
-            .pow(2)
-            .mean()
+            .max(dim=1)[0].mean()
         )
-    elif loss_type == "semilinear":
-        loss = (
-            torch.stack([influencer_margin - d, torch.zeros_like(d)], dim=1)
-            .max(dim=1)[0]
-            .mean()
-        )
-    elif loss_type == "inverse":
-        loss = (1.0 / (d + 1e-12)).mean()
-    elif loss_type == "hyperbolic":
-        loss_input = 1.0 / (d * (2 * influencer_margin - d) + 1e-12) - (
-            1 / influencer_margin**2
-        )
-        loss_input[d >= influencer_margin] = 0.0
-        loss = loss_input.mean()
-    else:
-        raise NotImplementedError
 
     return influencer_influencer_weight * loss
 
+def get_hinge_distance(query: torch.Tensor, database: torch.Tensor, edges: torch.Tensor, truth: torch.Tensor, p: int = 1) -> torch.Tensor:
+    """
+    Calculate the hinge distance.
 
-def get_hinge_distance(query, database, edges, truth, p=1):
+    Parameters:
+    query (torch.Tensor): The query tensor.
+    database (torch.Tensor): The database tensor.
+    edges (torch.Tensor): The edges tensor.
+    truth (torch.Tensor): The truth tensor.
+    p (int): The power for distance calculation. Default is 1.
+
+    Returns:
+    torch.Tensor: The calculated hinge distance.
+    """
     hinge = truth.float()
     hinge[hinge == 0] = -1
     if p == 1:
         d = torch.sqrt(
-            torch.sum((query[edges[0]] - database[edges[1]]) ** 2, dim=-1) + sqrt_eps
+            torch.sum((query[edges[0]] - database[edges[1]]) ** 2, dim=-1) + EPSILON
         )  # EUCLIDEAN
     elif p == 2:
         d = torch.sum(
             (query[edges[0]] - database[edges[1]]) ** 2, dim=-1
         )  # SQR-EUCLIDEAN
     else:
-        raise NotImplementedError
+        raise ValueError("p should be either 1 or 2")
 
     return hinge, d
 
-
 def influencer_loss(
-    user_embed,
-    influencer_embed,
-    batch,
-    user_influencer_edges,
-    user_influencer_truth,
-    influencer_influencer_edges,
-    influencer_influencer_truth,
-    user_influencer_weight=1.0,
-    influencer_influencer_weight=1.0,
-    user_influencer_neg_ratio=1.0,
-    user_margin=1.0,
-    influencer_margin=1.0,
-    device="cpu",
-    scatter_loss=False,
-    loss_type="hinge",
-):
+    follower_embed: torch.Tensor,
+    influencer_embed: torch.Tensor,
+    batch: Batch,
+    follower_influencer_edges: torch.Tensor,
+    follower_influencer_truth: torch.Tensor,
+    influencer_influencer_edges: torch.Tensor,
+    influencer_influencer_truth: torch.Tensor,
+    follower_influencer_weight: float = 1.0,
+    influencer_influencer_weight: float = 1.0,
+    follower_influencer_neg_ratio: float = 1.0,
+    follower_margin: float = 1.0,
+    influencer_margin: float = 1.0,
+) -> torch.Tensor:
+    """
+    Calculate the influencer loss.
+
+    Parameters:
+    follower_embed (torch.Tensor): The follower embeddings.
+    influencer_embed (torch.Tensor): The influencer embeddings.
+    batch (Batch): The batch of data.
+    follower_influencer_edges (torch.Tensor): The follower influencer edges.
+    follower_influencer_truth (torch.Tensor): The follower influencer truth values.
+    influencer_influencer_edges (torch.Tensor): The influencer influencer edges.
+    influencer_influencer_truth (torch.Tensor): The influencer influencer truth values.
+    follower_influencer_weight (float): The follower influencer weight. Default is 1.0.
+    influencer_influencer_weight (float): The influencer influencer weight. Default is 1.0.
+    follower_influencer_neg_ratio (float): The follower influencer negative ratio. Default is 1.0.
+    follower_margin (float): The follower margin. Default is 1.0.
+    influencer_margin (float): The influencer margin. Default is 1.0.
+
+    Returns:
+    torch.Tensor: The calculated influencer loss.
+    """
+    device = follower_embed.device
+
     # Initialize losses to zero
-    user_influencer_loss = torch.tensor(0.0, device=device)
+    follower_influencer_loss = torch.tensor(0.0, device=device)
     influencer_influencer_loss = torch.tensor(0.0, device=device)
 
     # Calculate each loss component if edges are not empty
-    if user_influencer_edges.nelement() != 0:
-        user_influencer_loss = get_user_influencer_loss(
+    if follower_influencer_edges.nelement() != 0:
+        follower_influencer_loss = get_follower_influencer_loss(
             batch,
-            user_influencer_edges,
-            user_influencer_truth,
-            user_embed,
+            follower_influencer_edges,
+            follower_influencer_truth,
+            follower_embed,
             influencer_embed,
-            user_influencer_weight,
-            user_influencer_neg_ratio,
-            user_margin,
+            follower_influencer_weight,
+            follower_influencer_neg_ratio,
+            follower_margin,
             device,
-            scatter_loss,
         )
 
     if influencer_influencer_edges.nelement() != 0:
@@ -290,17 +206,16 @@ def influencer_loss(
             influencer_influencer_weight,
             influencer_margin,
             device,
-            loss_type=loss_type,
         )
 
     # Compute the total loss
     loss = (
-        user_influencer_weight * user_influencer_loss
+        follower_influencer_weight * follower_influencer_loss
         + influencer_influencer_weight * influencer_influencer_loss
     )
 
     sublosses = {
-        "user_influencer_loss": user_influencer_loss.item(),
+        "follower_influencer_loss": follower_influencer_loss.item(),
         "influencer_influencer_loss": influencer_influencer_loss.item(),
     }
     return loss, sublosses

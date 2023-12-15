@@ -1,4 +1,5 @@
 import contextlib
+import logging
 
 # System imports
 import sys
@@ -35,6 +36,12 @@ class InfluencerModel(ObjectCondensationBase):
         self.val_radius_history = (
             []
         )  # Used to track the best validation radius over time
+
+        # Get the logging level from the config file
+        logging_level = hparams.get("logging_level", "INFO")
+
+        # Set up the logger
+        logging.basicConfig(level=logging_level)
 
     def get_training_edges(
         self,
@@ -101,22 +108,22 @@ class InfluencerModel(ObjectCondensationBase):
     def training_step(self, batch, batch_idx):
         """
         The Influencer training step.
-        1. Runs the model in no_grad mode to get the user and influencer embeddings
-        2. Builds hard negative, random pairs, and true edges for the user-user loss
-        3. Build hard negatives and true edges for the user-influencer loss
+        1. Runs the model in no_grad mode to get the follower and influencer embeddings
+        2. Builds hard negative, random pairs, and true edges for the follower-follower loss
+        3. Build hard negatives and true edges for the follower-influencer loss
         4. Build true edges for the influencer-influencer loss
         5. Compute the loss
         """
 
-        # Get the user and influencer embeddings
+        # Get the follower and influencer embeddings
         input_data = self.get_input_data(batch)
         with torch.no_grad():
-            user_embed, influencer_embed = self(input_data, batch=batch.batch)
+            follower_embed, influencer_embed = self(input_data, batch=batch.batch)
 
         # Get the training edges for each loss function
-        user_influencer_edges, user_influencer_truth = self.get_training_edges(
+        follower_influencer_edges, follower_influencer_truth = self.get_training_edges(
             batch,
-            user_embed,
+            follower_embed,
             influencer_embed,
             hnm=True,
             tp=True,
@@ -138,36 +145,33 @@ class InfluencerModel(ObjectCondensationBase):
 
         # Get the hits of interest
         included_hits = torch.cat(
-            [user_influencer_edges, influencer_influencer_edges], dim=1
+            [follower_influencer_edges, influencer_influencer_edges], dim=1
         ).unique()
-        user_embed[included_hits], influencer_embed[included_hits] = self(
+        follower_embed[included_hits], influencer_embed[included_hits] = self(
             input_data[included_hits], batch=batch.batch[included_hits]
         )
 
         # Calculate each loss function
 
         loss, sublosses = influencer_loss(
-            user_embed,
+            follower_embed,
             influencer_embed,
             batch,
-            user_influencer_edges,
-            user_influencer_truth,
+            follower_influencer_edges,
+            follower_influencer_truth,
             influencer_influencer_edges,
             influencer_influencer_truth,
-            user_influencer_weight=self.user_influencer_weight,
+            follower_influencer_weight=self.follower_influencer_weight,
             influencer_influencer_weight=self.influencer_influencer_weight,
-            user_influencer_neg_ratio=self.hparams["user_influencer_neg_ratio"],
-            user_margin=self.hparams["margin"],
+            follower_influencer_neg_ratio=self.hparams["follower_influencer_neg_ratio"],
+            follower_margin=self.hparams["margin"],
             influencer_margin=self.hparams["influencer_margin"],
-            device=self.device,
-            scatter_loss=self.hparams.get("scatter_loss", True),
-            loss_type=self.hparams.get("loss_type", "hinge"),
         )
 
         self.log_dict(
             {
                 "train_loss": loss,
-                "train_user_influencer_loss": sublosses["user_influencer_loss"],
+                "train_follower_influencer_loss": sublosses["follower_influencer_loss"],
                 "train_influencer_influencer_loss": sublosses[
                     "influencer_influencer_loss"
                 ],
@@ -177,7 +181,7 @@ class InfluencerModel(ObjectCondensationBase):
         )
 
         if torch.isnan(loss):
-            print("Loss is nan")
+            logging.error("Loss is nan")
             sys.exit()
 
         return loss
@@ -185,21 +189,21 @@ class InfluencerModel(ObjectCondensationBase):
     def shared_evaluation(self, batch, batch_idx, val_radius=None):
         if val_radius is None:
             if self.moving_average_val_radius == 0:
-                print(self.hparams["val_radius"])
+                logging.debug(self.hparams["val_radius"])
                 val_radius = self.hparams.get("val_radius", self.hparams["margin"])
             else:
                 val_radius = self.moving_average_val_radius
 
-        print("VAL_RADIUS = ", val_radius)
+        logging.debug("VAL_RADIUS = ", val_radius)
 
         input_data = self.get_input_data(batch)
         self.start_validation_tracking()
-        user_embed, influencer_embed = self(input_data, batch=batch.batch)
+        follower_embed, influencer_embed = self(input_data, batch=batch.batch)
 
         try:
-            user_influencer_edges, user_influencer_truth = self.get_training_edges(
+            follower_influencer_edges, follower_influencer_truth = self.get_training_edges(
                 batch,
-                user_embed,
+                follower_embed,
                 influencer_embed,
                 hnm=True,
                 knn=500,
@@ -207,7 +211,7 @@ class InfluencerModel(ObjectCondensationBase):
                 radius=val_radius,
             )
         except Exception:
-            user_influencer_edges, user_influencer_truth = torch.empty(
+            follower_influencer_edges, follower_influencer_truth = torch.empty(
                 [2, 0], dtype=torch.int64, device=self.device
             ), torch.empty([0], dtype=torch.int64, device=self.device)
         try:
@@ -230,21 +234,18 @@ class InfluencerModel(ObjectCondensationBase):
 
         # Compute the total loss
         loss, sublosses = influencer_loss(
-            user_embed,
+            follower_embed,
             influencer_embed,
             batch,
-            user_influencer_edges,
-            user_influencer_truth,
+            follower_influencer_edges,
+            follower_influencer_truth,
             influencer_influencer_edges,
             influencer_influencer_truth,
-            user_influencer_weight=self.user_influencer_weight,
+            follower_influencer_weight=self.follower_influencer_weight,
             influencer_influencer_weight=self.influencer_influencer_weight,
-            user_influencer_neg_ratio=self.hparams["user_influencer_neg_ratio"],
-            user_margin=self.hparams["margin"],
+            follower_influencer_neg_ratio=self.hparams["follower_influencer_neg_ratio"],
+            follower_margin=self.hparams["margin"],
             influencer_margin=self.hparams["influencer_margin"],
-            device=self.device,
-            scatter_loss=self.hparams["scatter_loss"],
-            loss_type=self.hparams.get("loss_type", "hinge"),
         )
 
         try:
@@ -255,10 +256,10 @@ class InfluencerModel(ObjectCondensationBase):
             current_lr = None
 
         represent_eff, represent_pur, represent_dup = self.get_representative_metrics(
-            batch, user_influencer_edges, user_influencer_truth
+            batch, follower_influencer_edges, follower_influencer_truth
         )
         tracking_eff, tracking_pur, tracking_dup = self.get_tracking_metrics(
-            batch, user_influencer_edges, user_influencer_truth
+            batch, follower_influencer_edges, follower_influencer_truth
         )
 
         f1 = tracking_eff * tracking_pur * (1 - tracking_dup)
@@ -269,13 +270,13 @@ class InfluencerModel(ObjectCondensationBase):
             "represent_eff": represent_eff,
             "represent_dup": represent_dup,
             "lr": current_lr,
-            "user_influencer_loss": sublosses["user_influencer_loss"],
+            "follower_influencer_loss": sublosses["follower_influencer_loss"],
             "influencer_influencer_loss": sublosses["influencer_influencer_loss"],
-            "user_influencer_edges": user_influencer_edges,
-            "user_influencer_truth": user_influencer_truth,
+            "follower_influencer_edges": follower_influencer_edges,
+            "follower_influencer_truth": follower_influencer_truth,
             "influencer_influencer_edges": influencer_influencer_edges,
             "influencer_influencer_truth": influencer_influencer_truth,
-            "user_embed": user_embed,
+            "follower_embed": follower_embed,
             "influencer_embed": influencer_embed,
             "tracking_eff": tracking_eff,
             "tracking_pur": tracking_pur,
@@ -289,9 +290,9 @@ class InfluencerModel(ObjectCondensationBase):
         """
 
         if self.current_epoch % PRINT_RATE == 0:
-            print("-------------------------------------------")
-            print("Validation step")
-            print(f"Current learning rate: {self.optimizers().param_groups[0]['lr']}")
+            logging.info("-------------------------------------------")
+            logging.info("Validation step")
+            logging.debug(f"Current learning rate: {self.optimizers().param_groups[0]['lr']}")
 
             best_f1 = 0
             best_val_radius = None
@@ -316,7 +317,7 @@ class InfluencerModel(ObjectCondensationBase):
                     "represent_eff": best_outputs["represent_eff"],
                     "represent_dup": best_outputs["represent_dup"],
                     "lr": best_outputs["lr"],
-                    "user_influencer_loss": best_outputs["user_influencer_loss"],
+                    "follower_influencer_loss": best_outputs["follower_influencer_loss"],
                     "influencer_influencer_loss": best_outputs[
                         "influencer_influencer_loss"
                     ],
@@ -355,16 +356,16 @@ class InfluencerModel(ObjectCondensationBase):
             )
 
     @property
-    def user_influencer_weight(self):
-        return self.get_weight("user_influencer_weight")
+    def follower_influencer_weight(self):
+        return self.get_weight("follower_influencer_weight")
 
     @property
     def influencer_influencer_weight(self):
         return self.get_weight("influencer_influencer_weight")
 
     @property
-    def user_user_weight(self):
-        return self.get_weight("user_user_weight")
+    def follower_follower_weight(self):
+        return self.get_weight("follower_follower_weight")
 
     @property
     def moving_average_val_radius(self):

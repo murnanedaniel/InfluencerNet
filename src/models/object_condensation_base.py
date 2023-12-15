@@ -547,12 +547,12 @@ class ObjectCondensationBase(pl.LightningModule):
         fig = go.Figure()
 
         if ui_edges.shape[1] > 0:
-            users = ui_edges[0].unique().cpu()
+            followers = ui_edges[0].unique().cpu()
             representatives = ui_edges[1].unique().cpu()
 
-            user_embed = spatial1[users]
+            follower_embed = spatial1[followers]
             influencer_embed = spatial2[representatives]
-            all_embed = torch.cat([user_embed, influencer_embed], dim=0)
+            all_embed = torch.cat([follower_embed, influencer_embed], dim=0)
 
             # Use an incremental PCA every 10 epochs
             if self.original_pca is None:
@@ -563,20 +563,20 @@ class ObjectCondensationBase(pl.LightningModule):
 
             # Transform the embeddings
             all_pca = self.original_pca.transform(all_embed.cpu().numpy())
-            user_pca = self.original_pca.transform(user_embed.cpu().numpy())
+            follower_pca = self.original_pca.transform(follower_embed.cpu().numpy())
             influencer_pca = self.original_pca.transform(influencer_embed.cpu().numpy())
 
-            # plot the user embedding, with color given by the position in 1D PCA
+            # plot the follower embedding, with color given by the position in 1D PCA
             # Make a color scale from all_pca
             fig.add_trace(
                 go.Scatter(
-                    x=batch.x[users, 0].cpu(),
-                    y=batch.x[users, 1].cpu(),
+                    x=batch.x[followers, 0].cpu(),
+                    y=batch.x[followers, 1].cpu(),
                     mode="markers",
                     marker=dict(
                         cmin=all_pca.min(),
                         cmax=all_pca.max(),
-                        color=user_pca[:, 0],
+                        color=follower_pca[:, 0],
                         colorscale="Rainbow",
                     ),
                 )
@@ -760,11 +760,11 @@ class ObjectCondensationBase(pl.LightningModule):
                 )
             )
 
-    def get_cluster_metrics(self, batch, user_user_edges, user_user_truth):
+    def get_cluster_metrics(self, batch, follower_follower_edges, follower_follower_truth):
         # Compute the cluster metrics
         cluster_true = batch.edge_index.shape[1]
-        cluster_true_positive = user_user_truth.sum()
-        cluster_positive = user_user_edges.shape[1]
+        cluster_true_positive = follower_follower_truth.sum()
+        cluster_positive = follower_follower_edges.shape[1]
 
         cluster_eff = cluster_true_positive / max(cluster_true, 1)
         cluster_pur = cluster_true_positive / max(cluster_positive, 1)
@@ -772,11 +772,11 @@ class ObjectCondensationBase(pl.LightningModule):
         return cluster_eff, cluster_pur
 
     def get_representative_metrics(
-        self, batch, user_influencer_edges, user_influencer_truth
+        self, batch, follower_influencer_edges, follower_influencer_truth
     ):
         # Compute the representative metrics
-        representative_true_positive = user_influencer_truth.sum()
-        representative_positive = user_influencer_edges.shape[1]
+        representative_true_positive = follower_influencer_truth.sum()
+        representative_positive = follower_influencer_edges.shape[1]
 
         representative_true = 0
         represent_dup = []
@@ -786,7 +786,7 @@ class ObjectCondensationBase(pl.LightningModule):
                 continue
             num_reps = max(
                 1,
-                user_influencer_edges[1, batch.pid[user_influencer_edges[1]] == pid]
+                follower_influencer_edges[1, batch.pid[follower_influencer_edges[1]] == pid]
                 .unique()
                 .shape[0],
             )
@@ -799,7 +799,7 @@ class ObjectCondensationBase(pl.LightningModule):
 
         return represent_eff, represent_pur, represent_dup
 
-    def get_tracking_metrics(self, batch, user_influencer_edges, user_influencer_truth):
+    def get_tracking_metrics(self, batch, follower_influencer_edges, follower_influencer_truth):
         """
         We calculate tracking efficiency, tracking fake rate and tracking duplicity.
         We loop through each (valid) PID and check how many representative (valid) clusters match to that track.
@@ -811,7 +811,7 @@ class ObjectCondensationBase(pl.LightningModule):
         """
 
         clusters = pd.DataFrame(
-            user_influencer_edges.cpu().T.numpy(), columns=["hits", "cluster_id"]
+            follower_influencer_edges.cpu().T.numpy(), columns=["hits", "cluster_id"]
         )
         clusters["cluster_size"] = clusters.groupby("cluster_id")[
             "cluster_id"

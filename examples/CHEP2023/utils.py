@@ -27,15 +27,15 @@ class MetricThresholdStopping(Callback):
         self.monitor_metric = monitor_metric
         self.threshold_value = threshold_value
         self.mode = mode
-        assert mode in ['min', 'max'], "Mode must be 'min' or 'max'"
+        assert mode in ["min", "max"], "Mode must be 'min' or 'max'"
 
     def on_validation_end(self, trainer, pl_module):
         logs = trainer.callback_metrics
         metric_value = logs.get(self.monitor_metric)
         if metric_value is not None:
-            if self.mode == 'min' and metric_value <= self.threshold_value:
+            if self.mode == "min" and metric_value <= self.threshold_value:
                 trainer.should_stop = True
-            elif self.mode == 'max' and metric_value >= self.threshold_value:
+            elif self.mode == "max" and metric_value >= self.threshold_value:
                 trainer.should_stop = True
 
 
@@ -71,8 +71,8 @@ def load_config_and_checkpoint(config_path, default_root_dir):
         with open(config_path) as file:
             return yaml.load(file, Loader=yaml.FullLoader), None
 
-def get_trainer(config, default_root_dir):
 
+def get_trainer(config, default_root_dir):
     job_id = (
         os.environ["SLURM_JOB_ID"]
         if "SLURM_JOB_ID" in os.environ
@@ -83,10 +83,11 @@ def get_trainer(config, default_root_dir):
     )
 
     logger = (
-        WandbLogger(project=config["project"], 
-                    save_dir=config["artifact_dir"], 
-                    id=job_id,
-                    group=config.get("group", None),
+        WandbLogger(
+            project=config["project"],
+            save_dir=config["artifact_dir"],
+            id=job_id,
+            group=config.get("group", None),
         )
         if wandb is not None and config.get("log_wandb", True)
         else CSVLogger(save_dir=config["artifact_dir"])
@@ -115,7 +116,9 @@ def get_trainer(config, default_root_dir):
         )
         else ""
     )
-    filename = "best-" + filename_suffix + "-{" + checkpoint_metric_to_monitor + ":5f}-{epoch}"
+    filename = (
+        "best-" + filename_suffix + "-{" + checkpoint_metric_to_monitor + ":5f}-{epoch}"
+    )
 
     checkpoint_callback.CHECKPOINT_NAME_LAST = f"last-{filename_suffix}"
 
@@ -129,12 +132,10 @@ def get_trainer(config, default_root_dir):
         )
         callbacks.append(metric_threshold_callback)
 
-    
-
     gpus = config.get("gpus", 0)
     accelerator = "gpu" if gpus else "cpu"
     devices = gpus or 1
-    torch.set_float32_matmul_precision('medium')
+    torch.set_float32_matmul_precision("medium")
 
     return Trainer(
         accelerator=accelerator,
@@ -149,14 +150,13 @@ def get_trainer(config, default_root_dir):
 
 
 def get_module(config, checkpoint_path=None):
-
     if config["model"] in globals():
         model_class = globals()[config["model"]]
     else:
         raise ValueError(f"Model name {config['model']} not found in globals")
 
     default_root_dir = get_default_root_dir()
-    
+
     # First check if we need to load a checkpoint
     if checkpoint_path is not None:
         stage_module, config = load_module(checkpoint_path, model_class, config)
@@ -178,6 +178,7 @@ def load_module(checkpoint_path, stage_module_class, config):
     )
     stage_module._hparams = {**stage_module._hparams, **config}
     return stage_module, config
+
 
 def find_latest_checkpoint(checkpoint_base, templates=None):
     if templates is None:

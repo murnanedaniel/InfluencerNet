@@ -145,6 +145,7 @@ dmypy.json
 *artifacts*
 
 # development code
+**dev
 *dev*
 *debug*
 *test*

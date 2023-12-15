@@ -6,4 +6,11 @@ from .regression_GNN import RegressionInteractionGNN
 from .binned_regression_GNN import BinnedRegressionInteractionGNN
 
 
-__all__ = ["InfluencerTransformer", "NaiveTransformer", "RegressionTransformer", "RegressionTransformerPyG", "RegressionInteractionGNN", "BinnedRegressionInteractionGNN"]
+__all__ = [
+    "InfluencerTransformer",
+    "NaiveTransformer",
+    "RegressionTransformer",
+    "RegressionTransformerPyG",
+    "RegressionInteractionGNN",
+    "BinnedRegressionInteractionGNN",
+]

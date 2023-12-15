@@ -1,10 +1,24 @@
 from torch_geometric.nn.pool import radius
 
-def build_edges(
-    query, database, indices=None, r_max=1.0, k_max=10, return_indices=False, self_loop=False, batch_index=None
-):
 
-    edge_list = radius(database, query, r=r_max, max_num_neighbors=k_max, batch_x=batch_index, batch_y=batch_index)
+def build_edges(
+    query,
+    database,
+    indices=None,
+    r_max=1.0,
+    k_max=10,
+    return_indices=False,
+    self_loop=False,
+    batch_index=None,
+):
+    edge_list = radius(
+        database,
+        query,
+        r=r_max,
+        max_num_neighbors=k_max,
+        batch_x=batch_index,
+        batch_y=batch_index,
+    )
 
     # Reset indices subset to correct global index
     if indices is not None:

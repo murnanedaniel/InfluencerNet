@@ -8,6 +8,7 @@ from torch_geometric.nn import TransformerConv
 # Local imports
 from .utils import make_mlp
 
+
 class RegressionInteractionGNN(nn.Module):
     def __init__(self, hparams):
         super().__init__()
@@ -72,11 +73,11 @@ class RegressionInteractionGNN(nn.Module):
 
         # Instead of torch scatter sum, we use the torch aggr class
         self.node_aggr = aggr.MultiAggregation(
-            aggrs = ["sum"],
+            aggrs=["sum"],
         )
 
         self.track_aggr = aggr.MultiAggregation(
-            aggrs = aggrs,
+            aggrs=aggrs,
         )
 
     def forward(self, x, batch=None, edge_index=None):

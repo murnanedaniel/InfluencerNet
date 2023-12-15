@@ -9,6 +9,7 @@ except ImportError:
 
 from .utils import get_module, get_trainer
 
+
 @click.command()
 @click.argument("config_file")
 @click.option("--checkpoint", "-c", default=None, help="Checkpoint to use for training")
@@ -34,14 +35,12 @@ def train(config_file, checkpoint=None):
     # setup stage
     os.makedirs(config["artifact_dir"], exist_ok=True)
 
-    module, config, default_root_dir = get_module(
-        config, checkpoint_path=checkpoint
-    )
+    module, config, default_root_dir = get_module(config, checkpoint_path=checkpoint)
 
     # run training, depending on whether we are using a Lightning trainable model or not
     trainer = get_trainer(config, default_root_dir)
     trainer.fit(module)
-    
+
 
 if __name__ == "__main__":
     main()

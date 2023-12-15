@@ -5,4 +5,11 @@ from .influencer_regression_model import InfluencerRegressionModel
 from .naive_regression_model import NaiveRegressionModel
 from .naive_binned_regression_model import NaiveBinnedRegressionModel
 
-__all__ = ["NaiveModel", "InfluencerModel", "InfluencerDummy", "InfluencerRegressionModel", "NaiveRegressionModel", "NaiveBinnedRegressionModel"]
+__all__ = [
+    "NaiveModel",
+    "InfluencerModel",
+    "InfluencerDummy",
+    "InfluencerRegressionModel",
+    "NaiveRegressionModel",
+    "NaiveBinnedRegressionModel",
+]

@@ -8,6 +8,7 @@ from torch_geometric.utils import to_dense_batch
 # Local imports
 from .utils import make_mlp
 
+
 class InfluencerTransformer(nn.Module):
     def __init__(self, hparams):
         super().__init__()
@@ -25,11 +26,24 @@ class InfluencerTransformer(nn.Module):
             layer_norm=True,
         )
 
-        hparams["nb_transformer_layers"] = hparams["nb_layer"] if "nb_transformer_layers" not in hparams else hparams["nb_transformer_layers"]
+        hparams["nb_transformer_layers"] = (
+            hparams["nb_layer"]
+            if "nb_transformer_layers" not in hparams
+            else hparams["nb_transformer_layers"]
+        )
 
         transformer_activation = "relu" if hparams["activation"] == "ReLU" else "gelu"
-        self.transformer_layer = nn.TransformerEncoderLayer(d_model=hparams["emb_hidden"], nhead=hparams["num_heads"], dim_feedforward=hparams["emb_hidden"], dropout=0.0, activation=transformer_activation, batch_first=True)
-        self.transformer_encoder = nn.TransformerEncoder(self.transformer_layer, num_layers=hparams["nb_transformer_layers"])
+        self.transformer_layer = nn.TransformerEncoderLayer(
+            d_model=hparams["emb_hidden"],
+            nhead=hparams["num_heads"],
+            dim_feedforward=hparams["emb_hidden"],
+            dropout=0.0,
+            activation=transformer_activation,
+            batch_first=True,
+        )
+        self.transformer_encoder = nn.TransformerEncoder(
+            self.transformer_layer, num_layers=hparams["nb_transformer_layers"]
+        )
 
         self.user_network = make_mlp(
             hparams["emb_hidden"],
@@ -62,12 +76,11 @@ class InfluencerTransformer(nn.Module):
         self.regime = hparams["regime"]
 
     def forward(self, x, batch=None):
-        
         x = self.input_network(x)
         if batch is not None:
             x, mask = to_dense_batch(x, batch)
             x = self.transformer_encoder(x, src_key_padding_mask=(~mask))
-            x = x[mask]        
+            x = x[mask]
         else:
             x = self.transformer_encoder(x.unsqueeze(0)).squeeze(0)
 

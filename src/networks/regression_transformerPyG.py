@@ -8,6 +8,7 @@ from torch_geometric.nn import TransformerConv
 # Local imports
 from .utils import make_mlp
 
+
 class RegressionTransformerPyG(nn.Module):
     def __init__(self, hparams):
         super().__init__()
@@ -22,21 +23,30 @@ class RegressionTransformerPyG(nn.Module):
             layer_norm=True,
         )
 
-        hparams["nb_transformer_layers"] = hparams["nb_layer"] if "nb_transformer_layers" not in hparams else hparams["nb_transformer_layers"]
+        hparams["nb_transformer_layers"] = (
+            hparams["nb_layer"]
+            if "nb_transformer_layers" not in hparams
+            else hparams["nb_transformer_layers"]
+        )
 
-        self.transformer_layers = nn.ModuleList([
-            TransformerConv(
-                hparams["emb_hidden"] if i == 0 else hparams["num_heads"]*hparams["emb_hidden"], 
-                hparams["emb_hidden"], 
-                heads=hparams["num_heads"], 
-                dropout=0.0
-            ) for i in range(hparams["nb_transformer_layers"])
-        ])
+        self.transformer_layers = nn.ModuleList(
+            [
+                TransformerConv(
+                    hparams["emb_hidden"]
+                    if i == 0
+                    else hparams["num_heads"] * hparams["emb_hidden"],
+                    hparams["emb_hidden"],
+                    heads=hparams["num_heads"],
+                    dropout=0.0,
+                )
+                for i in range(hparams["nb_transformer_layers"])
+            ]
+        )
 
         aggrs = ["sum", "mean", "min", "max", "std"]
 
         self.regression_network = make_mlp(
-            hparams["num_heads"]*hparams["emb_hidden"]*len(aggrs),
+            hparams["num_heads"] * hparams["emb_hidden"] * len(aggrs),
             [hparams["emb_hidden"]] * hparams["nb_layer"] + [hparams["regression_dim"]],
             hidden_activation=hparams["activation"],
             output_activation=None,
@@ -44,14 +54,12 @@ class RegressionTransformerPyG(nn.Module):
         )
 
         self.aggr = aggr.MultiAggregation(
-            aggrs = aggrs,
+            aggrs=aggrs,
         )
 
-
     def forward(self, x, batch=None, edge_index=None):
-        
         x = self.input_network(x)
-        
+
         for transformer_layer in self.transformer_layers:
             x = transformer_layer(x, edge_index)
 

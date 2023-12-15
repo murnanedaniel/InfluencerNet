@@ -10,6 +10,7 @@ except ImportError:
 
 from .utils import get_module, get_trainer, find_latest_checkpoint
 
+
 @click.command()
 @click.argument("config_file")
 @click.option("--checkpoint", "-c", default=None, help="Checkpoint to use for training")
@@ -18,6 +19,7 @@ def main(config_file, checkpoint):
     Main function to train a stage. Separate the main and train_stage functions to allow for testing.
     """
     evaluate(config_file, checkpoint)
+
 
 def evaluate(config_file, checkpoint=None):
     # load config
@@ -53,7 +55,7 @@ def evaluate(config_file, checkpoint=None):
     trainer = get_trainer(config, default_root_dir)
     with torch.inference_mode():
         trainer.test(module)
-    
+
 
 if __name__ == "__main__":
     main()
